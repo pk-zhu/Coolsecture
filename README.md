@@ -40,6 +40,7 @@ To view the help message:
 
 ```bash
 coolsecture -h
+coolsecture <subcommand> -h
 ```
 ## Example Workflow
 
