@@ -4,15 +4,6 @@ Coolsecture provides a modernized, user-friendly framework for comparative Hi-C 
 
 ---
 
-## Features
-- **Cross-species Hi-C analysis** with standardized inputs and outputs  
-- **Improved statistical treatment** of contact scores  
-- **Efficient algorithms** with vectorized and parallel implementations  
-- **Comprehensive diagnostic visualizations** to aid interpretation  
-- **Easy-to-use interface** that streamlines comparative genomics workflows  
-
----
-
 ## Requirements
 
 Coolsecture requires **Python 3.8+** and the following dependencies:
@@ -34,6 +25,9 @@ Clone this repository and install in editable mode:
 git clone https://github.com/pk-zhu/Coolsecture.git && cd Coolsecture
 pip install -e .
 ```
+
+---
+
 ## Usage
 
 To view the help message:
@@ -42,6 +36,9 @@ To view the help message:
 coolsecture -h
 coolsecture <subcommand> -h
 ```
+
+---
+
 ## Example Workflow
 
 1. Navigate to the example directory:
@@ -72,6 +69,8 @@ example/
 snakemake -np
 snakemake -j 8
 ```
+
+---
 
 ## Citation
 
