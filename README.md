@@ -50,7 +50,7 @@ coolsecture <subcommand> -h
 cd example
 ```
 
-2. Download example data and place it in the cools directory. For instance, obtain the .mcool files from the [Figure](https://github.com/pk-zhu/Coolsecture) and put them under cools:
+2. Download example data and place it in the cools directory. For instance, obtain the .mcool files from the [Figureshare](https://github.com/pk-zhu/Coolsecture) and put them under cools:
 
 ```bash
 tree .
