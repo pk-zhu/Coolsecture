@@ -1,8 +1,7 @@
-# 每个样本：指定 .fai 与 .cool/.mcool 的绝对路径（mcool 可用 Cooler URI）
 species:
-  Aar:
-    fai: step0/Aar.fa.fai
-    cool: cools/Aar.mcool
+  # Aar:
+  #   fai: step0/Aar.fa.fai
+  #   cool: cools/Aar.mcool
   Asu:
     fai: step0/Asu.fa.fai
     cool: cools/Asu.mcool
@@ -10,16 +9,13 @@ species:
     fai: step0/Ath.fa.fai
     cool: cools/Ath.mcool
 
-# 成对比较所用的 *.link 绝对路径（从 link2mark 起步）
 pairs:
   - { a: Aar, b: Asu, link: step0/Aar_Asu.link }
-  - { a: Aar, b: Ath, link: step0/Aar_Ath.link }
-  - { a: Asu, b: Ath, link: step0/Asu_Ath.link }
+  # - { a: Aar, b: Ath, link: step0/Aar_Ath.link }
+  # - { a: Asu, b: Ath, link: step0/Asu_Ath.link }
 
-# 统一指定要用的分组（如果是单层 .cool，可留空）
 cool_group: /resolutions/40000
 
-# 每个命令的参数，整行写在一个字符串中，Snakefile 会原样拼接
 parameters:
   link2mark_parameters: "--thr-len 300 --step-len 150"
   prepare_parameters: "--max-distance 500000000 --inter"
