@@ -41,3 +41,40 @@ To view the help message:
 ```bash
 coolsecture -h
 ```
+## Example Workflow
+
+1. Navigate to the example directory:
+
+```bash
+cd example
+```
+
+2. Download example data and place it in the cools directory. For instance, obtain the .mcool files from the [Figure](https://github.com/pk-zhu/Coolsecture) and put them under cools:
+
+```bash
+tree .
+example/
+├── config.yaml
+├── cools
+│   ├── Asu.mcool
+│   └── Ath.mcool
+├── Snakefile
+└── step0
+    ├── Asu_Ath.link
+    ├── Asu.fa.fai
+    └── Ath.fa.fai
+```
+
+3. Run a dry-run to preview the workflow and Execute the full workflow
+
+```bash
+snakemake -np
+snakemake -j 8
+```
+
+## Citation
+
+If you use Coolsecture in your research, please cite this repository:
+```
+Zhu PK. Coolsecture: An easy-to-use and improved framework for cross-species Hi-C contact map comparison.
+```
