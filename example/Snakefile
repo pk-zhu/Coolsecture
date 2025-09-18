@@ -1,0 +1,261 @@
+# run_coolsecture.snk
+# - Pipeline starts at link2mark (input: absolute *.link)
+# - CLI args are aggregated in config.parameters.*_parameters
+# - Species cool path is absolute file path; Snakefile appends ::group (cool_group) when calling
+# - All outputs are real files (no .done placeholders)
+# - Metric is per-frame jobs for better parallelism
+
+import os, re, itertools
+
+configfile: "config.yaml"
+
+# -----------------------
+# Config & basic objects
+# -----------------------
+SPECIES = list(config["species"].keys())
+SPEC    = config["species"]     # {sample: {fai: abs_path, cool: abs_path_to_(m)cool}}
+PAIRS   = config["pairs"]       # list of {a: sampleA, b: sampleB, link: abs_link}
+P       = config.get("parameters", {})
+COOL_GROUP = config.get("cool_group", "")
+
+LINK2MARK_P  = P.get("link2mark_parameters", "")
+PREPARE_P    = P.get("prepare_parameters", "")
+LIFTC_P      = P.get("liftcontacts_parameters", "")
+CSTAT_P      = P.get("contact_stat_parameters", "")
+METRIC_P     = P.get("metric_parameters", "")
+
+# -----------------------
+# Helpers
+# -----------------------
+def cool_file(sample):
+    """Return real file path (no ::group) for Snakemake existence checks."""
+    return str(SPEC[sample]["cool"]).split("::")[0]
+
+def cool_uri(sample):
+    """Return cooler URI: file(::/group) to pass to tools."""
+    base = cool_file(sample)
+    return f"{base}::{COOL_GROUP}" if COOL_GROUP else base
+
+def get_flag(params: str, name: str, default=None):
+    if not params:
+        return default
+    # match --name value  OR  --name=value
+    pat = re.compile(rf"(?:^|\s)--{re.escape(name)}(?:[=\s]+)(\S+)")
+    m = pat.search(params)
+    return m.group(1) if m else default
+
+def get_list(params: str, name: str):
+    if not params:
+        return []
+    # capture everything after flag until next ' --'
+    m = re.search(rf"(?:^|\s)--{re.escape(name)}(?:[=\s]+)([^-][\s\S]*?)((\s--\w+)|\s*$)", params)
+    if not m:
+        return []
+    chunk = m.group(1).strip()
+    return [x for x in chunk.split() if x]
+
+def figure_ext_from(params: str, default="pdf"):
+    return get_flag(params, "format", default) or default
+
+def strip_flag_block(params: str, name: str) -> str:
+    """Remove a flag and its values (until next '--xxx' or end)."""
+    if not params:
+        return ""
+    s = " " + params + " "
+    s = re.sub(rf"\s--{re.escape(name)}(?:[=\s]+)(?:[^\s-][\s\S]*?)(?=(\s--\w+|\s$))", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+# -----------------------
+# Parse formats/frames for output names
+# -----------------------
+_CSTAT_EXT  = figure_ext_from(CSTAT_P, "pdf")
+_METRIC_EXT = figure_ext_from(METRIC_P, "pdf")
+_METRIC_KIND   = get_flag(METRIC_P, "metric", "pbad")
+_METRIC_FRAMES = [int(x) for x in (get_list(METRIC_P, "frames") or ["8"])]
+# To avoid duplicate --frames when running per-frame jobs:
+_METRIC_P_NO_FRAMES = strip_flag_block(METRIC_P, "frames")
+
+# -----------------------
+# Canonical output paths (for rule all)
+# -----------------------
+def prep_rich(sample): return f"step1/{sample}/{sample}.contacts.tsv"
+def mark_path(a,b):    return f"step2/{a}_{b}.mark"
+def lift_path(a,b):    return f"step2/{a}_{b}/{a}_{b}.liftContacts"
+
+def cstat_files(a,b):
+    prefix = f"step3/{a}_{b}"
+    return [
+        f"{prefix}.percentile_heatmap.{_CSTAT_EXT}",
+        f"{prefix}.distance_heatmap.{_CSTAT_EXT}",
+        f"{prefix}.ratio_scatter.{_CSTAT_EXT}",
+    ]
+
+def metric_files(a,b):
+    prefix = f"step3/{a}_{b}"
+    outs = []
+    for fr in _METRIC_FRAMES:
+        outs.append(f"{prefix}.{_METRIC_KIND}.{fr}frame.bedGraph")
+        outs.append(f"{prefix}.{_METRIC_KIND}.{fr}frame.stat.{_METRIC_EXT}")
+    return outs
+
+def cool_files(a,b):
+    prefix = f"step3/{a}_{b}"
+    return [f"{prefix}.Observed.cool", f"{prefix}.Control.cool"]
+
+# -----------------------
+# Rule: all
+# -----------------------
+def outputs_all():
+    outs = []
+    for s in SPECIES:
+        outs.append(prep_rich(s))
+    for pair in PAIRS:
+        a, b = pair["a"], pair["b"]
+        outs.append(mark_path(a,b))
+        outs.append(lift_path(a,b))
+        outs += cstat_files(a,b)
+        outs += metric_files(a,b)
+        outs += cool_files(a,b)
+    return outs
+
+rule all:
+    input: outputs_all()
+
+# -----------------------
+# step1: prepare (per sample)
+# -----------------------
+rule prepare_sample:
+    input:
+        cool_file=lambda wc: cool_file(wc.sample)
+    output:
+        rich="step1/{sample}/{sample}.contacts.tsv"
+    threads: 10
+    params:
+        cool_uri=lambda wc: cool_uri(wc.sample),
+        extra=PREPARE_P
+    shell:
+        r"""
+        coolsecture prepare \
+          --cool {params.cool_uri} \
+	  {params.extra} \
+	  --nthreads {threads} \
+	  --out-prefix step1/{wildcards.sample}/{wildcards.sample}          
+        """
+
+# -----------------------
+# step2: link2mark (per pair), starting point
+# -----------------------
+rule link2mark:
+    input:
+        link=lambda wc: next(p["link"] for p in PAIRS if p["a"]==wc.a and p["b"]==wc.b)
+    output:
+        mark="step2/{a}_{b}.mark"
+    threads: 10
+    params:
+        extra=LINK2MARK_P
+    shell:
+        r"""
+        mkdir -p step2
+        coolsecture link2mark \
+          --link {input.link} \
+          {params.extra} \
+	  --out-prefix step2/{wildcards.a}_{wildcards.b}
+        """
+
+# -----------------------
+# step2: liftcontacts (per pair)
+# -----------------------
+rule liftcontacts:
+    input:
+        richA="step1/{a}/{a}.contacts.tsv",
+        richB="step1/{b}/{b}.contacts.tsv",
+        faiA=lambda wc: SPEC[wc.a]["fai"],
+        faiB=lambda wc: SPEC[wc.b]["fai"],
+        mark="step2/{a}_{b}.mark"
+    output:
+        lifted="step2/{a}_{b}/{a}_{b}.liftContacts"
+    threads: 10
+    params:
+        extra=LIFTC_P
+    shell:
+        r"""
+        mkdir -p step2/{wildcards.a}_{wildcards.b}
+        coolsecture liftcontacts \
+          --contact-a {input.richA} \
+          --contact-b {input.richB} \
+          --fadix-a {input.faiA} \
+          --fadix-b {input.faiB} \
+          --mark {input.mark} \
+          {params.extra} \
+          --out-prefix step2/{wildcards.a}_{wildcards.b}/{wildcards.a}_{wildcards.b}
+        """
+
+# -----------------------
+# step3: contact-stat (per pair)
+# -----------------------
+rule contact_stat:
+    input:
+        liftover="step2/{a}_{b}/{a}_{b}.liftContacts",
+        fai=lambda wc: SPEC[wc.a]["fai"]
+    output:
+        heat1=f"step3/{{a}}_{{b}}.percentile_heatmap.{_CSTAT_EXT}",
+        heat2=f"step3/{{a}}_{{b}}.distance_heatmap.{_CSTAT_EXT}",
+        scat =f"step3/{{a}}_{{b}}.ratio_scatter.{_CSTAT_EXT}"
+    threads: 10
+    params:
+        extra=CSTAT_P
+    shell:
+        r"""
+        mkdir -p step3
+        coolsecture contact-stat \
+          --liftover {input.liftover} \
+          --fadix {input.fai} \
+          {params.extra} \
+          --out-prefix step3/{wildcards.a}_{wildcards.b}
+        """
+
+# -----------------------
+# step3: metric (per pair, per frame)  -> better parallelism
+# -----------------------
+rule metric_one_frame:
+    input:
+        liftover="step2/{a}_{b}/{a}_{b}.liftContacts",
+        fai=lambda wc: SPEC[wc.a]["fai"]
+    output:
+        bed=f"step3/{{a}}_{{b}}.{_METRIC_KIND}.{{fr}}frame.bedGraph",
+        fig=f"step3/{{a}}_{{b}}.{_METRIC_KIND}.{{fr}}frame.stat.{_METRIC_EXT}"
+    threads: 10
+    params:
+        # remove any --frames from user parameters to avoid duplication
+        extra=_METRIC_P_NO_FRAMES
+    shell:
+        r"""
+        mkdir -p step3
+        coolsecture metric \
+          --liftover {input.liftover} \
+          --fadix {input.fai} \
+          --frames {wildcards.fr} \
+          {params.extra} \
+          --out-prefix step3/{wildcards.a}_{wildcards.b}
+        """
+
+# -----------------------
+# step3: lift2cool (per pair)
+# -----------------------
+rule lift2cool:
+    input:
+        liftover="step2/{a}_{b}/{a}_{b}.liftContacts",
+        fai=lambda wc: SPEC[wc.a]["fai"]
+    output:
+        obs="step3/{a}_{b}.Observed.cool",
+        ctl="step3/{a}_{b}.Control.cool"
+    threads: 10
+    shell:
+        r"""
+        mkdir -p step3
+        coolsecture lift2cool \
+          --liftover {input.liftover} \
+          --fadix {input.fai} \
+          --out-prefix step3/{wildcards.a}_{wildcards.b}
+          
+        """
