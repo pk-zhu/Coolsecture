@@ -77,5 +77,5 @@ snakemake -j 8
 
 If you use Coolsecture in your research, please cite this repository:
 ```
-Zhu PK. Coolsecture: An easy-to-use and improved framework for cross-species Hi-C contact map comparison.
+Coolsecture: An easy-to-use and improved framework for cross-species Hi-C contact map comparison.
 ```
