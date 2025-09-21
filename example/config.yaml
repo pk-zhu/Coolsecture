@@ -20,5 +20,6 @@ parameters:
   link2mark_parameters: "--thr-len 300 --step-len 150"
   prepare_parameters: "--max-distance 500000000 --inter"
   liftcontacts_parameters: "--agg-frame 400000 --dups-filter coverage --model balanced"
-  contact_stat_parameters: "--bins 400 --max-dist-mb 5 --cmap pinkblue"     
-  metric_parameters: "--frames 8 --metric pbad --random-stats"
+  contact_stat_parameters: "--bins 400 --cmap RdBu_r --max-dist-mb 10"     
+  metric_parameters: "--frames 8 --metric pbad"
+
