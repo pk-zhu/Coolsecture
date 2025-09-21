@@ -12,7 +12,7 @@ Coolsecture requires **Python 3.8+** and the following dependencies:
 - numpy  
 - pandas  
 - matplotlib  
-- cooler  
+- [cooler](https://github.com/open2c/cooler)
 - h5py  
 
 ---
