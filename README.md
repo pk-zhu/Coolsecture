@@ -1,6 +1,6 @@
 # Coolsecture: An Easy-to-Use and Improved Framework for Cross-Species Hi-C Contact Map Comparison
 
-Coolsecture provides a modernized, user-friendly framework for comparative Hi-C analysis across species. By adopting standardized inputs and outputs, improving the statistical treatment of contact scores, implementing vectorized and parallel algorithms, and supplying comprehensive diagnostic visualizations, Coolsecture addresses the limitations of the original C-InterSecture pipeline.
+Coolsecture provides a modernized, user-friendly framework for comparative Hi-C analysis across species. By adopting standardized inputs and outputs, improving the statistical treatment of contact scores, implementing vectorized and parallel algorithms, and supplying comprehensive diagnostic visualizations, Coolsecture addresses the limitations of the original [C-InterSecture](https://github.com/NuriddinovMA/C-InterSecture) pipeline.
 
 ---
 
