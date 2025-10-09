@@ -68,7 +68,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--link", required=True, help="Path to .link file")
-    p.add_argument("--out-prefix", required=True, help="Output prefix")
+    p.add_argument("-p", "--out-prefix", required=True, help="Output prefix")
     p.add_argument("--no-densify", action="store_true", help="Disable splitting of long segments (> thr-len bp)")
     p.add_argument("--no-gap", action="store_true", help="Do not emit gap segments between adjacent links")
     p.add_argument("--thr-len", type=int, default=300, help="Length threshold (bp) used for densify")
@@ -79,3 +79,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
