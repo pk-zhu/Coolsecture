@@ -84,7 +84,7 @@ def main():
 
     threads = os.cpu_count() or 24
 
-    run_minimap2(mm2, ref=str(B), qry=str(A), preset=args.preset,
+    run_minimap2(mm2, ref=str(B), qry=str(A), preset=args.x,
                  paf_path=paf_path, threads=threads)
 
     paf_to_link(paf_path, link_path, min_match=args.min_match)
@@ -94,3 +94,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
