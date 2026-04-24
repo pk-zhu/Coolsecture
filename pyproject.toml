@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coolsecture"
-version = "0.1.2"
+version = "0.2.13"
 description = "Hi-C contact liftover and post-processing toolkit"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 stats = ["scipy", "scikit-learn"]
+hic = ["hic-straw", "hic2cool"]
+viz = ["plotly>=5.0"]
 
 [project.scripts]
 coolsecture = "coolsecture.__main__:main"
