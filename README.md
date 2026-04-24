@@ -398,31 +398,6 @@ python -m pip install -e ".[viz]"
 The Snakemake examples are designed around PDF outputs and may remove Plotly HTML
 artifacts to keep workflow outputs predictable.
 
-## Repository Hygiene
-
-Recommended files to keep in the GitHub repository:
-
-- `src/`
-- `pyproject.toml`
-- `README.md`
-- `LICENSE`
-- lightweight example `Snakefile` and `config.yaml` files
-- small synthetic or metadata-only example inputs, if needed
-
-Recommended files to exclude from Git:
-
-- `.snakemake/`
-- `.codex_tmp/`
-- `__pycache__/`
-- `src/*.egg-info/`
-- `step0/`, `step1/`, `step2/`, `step3/`
-- large `.hic`, `.cool`, `.mcool`, `.tsv`, `.bedGraph`, and generated figure files
-- local backup or benchmark directories such as `bak/`
-
-For reproducible public releases, put large data on Zenodo, Figshare, SRA/GEO, or
-another data repository, then link to it from this README or from a separate data
-availability document.
-
 ## Citation
 
 If you use Coolsecture in your research, please cite this repository:
