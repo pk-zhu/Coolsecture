@@ -1,0 +1,24 @@
+species:
+  GM12878:
+    fai: data/gh38.fa.fai
+    hic: data/GM12878.hic
+  mESC:
+    fai: data/mm10.fa.fai
+    hic: data/mESC.hic
+  CH12-LX:
+    fai: data/mm10.fa.fai
+    hic: data/CH12-LX.hic
+
+pairs:
+  - { a: GM12878, b: mESC, chain: data/hg38ToMm10.over.chain }
+  - { a: GM12878, b: CH12-LX, chain: data/hg38ToMm10.over.chain }
+
+default_threads: 16
+
+parameters:
+  link2mark_parameters: "--thr-len 300 --step-len 150"
+  prepare_parameters: "--max-distance 5000000000 --inter --resolution=10000" # hic作为输入时只支持单分辨率
+  liftcontracts_parameters: "--agg-frame 400000 --dups-filter coverage --model balanced --tmp-dir .snakemake/tmp/liftcontracts --spill-threshold-mb 256 --hash-shards 64 --pbad-mode auto --pbad-auto-threshold-mb 1024"
+  contact_stat_parameters: "--bins 400 --cmap RdBu_r --max-dist-mb 5000000000"
+  metric_parameters: "--frames 8 --metric pbad"
+  lift2matrix_parameters: "--tmp-dir .snakemake/tmp/lift2matrix --spill-threshold-mb 256"
