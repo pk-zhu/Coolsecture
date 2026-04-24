@@ -1,0 +1,596 @@
+﻿# run_coolsecture.snk
+# - Pipeline starts at link2mark (input: absolute *.link)
+# - CLI args are aggregated in config.parameters.*_parameters
+# - Species cool path is absolute file path; Snakefile appends ::group (cool_group) when calling
+# - All outputs are real files (no .done placeholders)
+# - Metric is per-frame jobs for better parallelism
+
+import os, re, itertools, sys, shlex, subprocess
+from pathlib import Path
+
+configfile: "config.yaml"
+
+# -----------------------
+# Config & basic objects
+# -----------------------
+SPECIES = list(config["species"].keys())
+SPEC    = config["species"]     # {sample: {fai: abs_path, cool/hic: abs_path_to_matrix}}
+PAIRS   = config["pairs"]       # list of {a: sampleA, b: sampleB, link/chain: abs_path}
+P       = config.get("parameters", {})
+COOL_GROUP = config.get("cool_group", "")
+
+LINK2MARK_P  = P.get("link2mark_parameters", "")
+PREPARE_P    = P.get("prepare_parameters", "")
+LIFTCONTRACTS_P = P.get("liftcontracts_parameters", P.get("liftcontacts_parameters", ""))
+CSTAT_P      = P.get("contact_stat_parameters", "")
+METRIC_P     = P.get("metric_parameters", "")
+HAS_MCOOL = any(str(SPEC[s].get("cool", "")).lower().endswith(".mcool") and "::" not in str(SPEC[s].get("cool", "")) for s in SPECIES)
+HAS_HIC = any(str(SPEC[s].get("cool", "")).lower().endswith(".hic") or str(SPEC[s].get("hic", "")).lower().endswith(".hic") for s in SPECIES)
+DEFAULT_THREADS = config.get("default_threads", 10)
+
+def get_matrix_path(sample):
+    """Return matrix path for a sample (hic or cool/mcool)."""
+    s = SPEC[sample]
+    if "hic" in s and s["hic"]:
+        return str(s["hic"])
+    if "cool" in s and s["cool"]:
+        return str(s["cool"])
+    raise KeyError(f"Sample {sample} has neither 'hic' nor 'cool' path defined")
+
+def get_matrix_type(sample):
+    """Return matrix type: 'hic', 'mcool', or 'cool'."""
+    path = get_matrix_path(sample)
+    if path.lower().endswith(".hic"):
+        return "hic"
+    if path.lower().endswith(".mcool"):
+        return "mcool"
+    return "cool"
+
+def _extract_resolution_str(params: str) -> str:
+    if not params:
+        return ""
+    for pat in [
+        r"(?:^|\s)--resolution(?:[=\s]+)(\S+)",
+        r"(?:^|\s)-res(?:[=\s]+)(\S+)",
+    ]:
+        m = re.search(pat, params)
+        if m:
+            return m.group(1)
+    return ""
+
+RES_LIST_STR = _extract_resolution_str(PREPARE_P)
+if RES_LIST_STR:
+    RES_LIST = [int(x) for x in RES_LIST_STR.split(",") if x]
+else:
+    RES_LIST = []
+
+WORKDIR = Path(workflow.basedir).resolve()
+SRC_DIR = WORKDIR.parent / "src"
+
+def split_cli_args(params: str):
+    return shlex.split(params or "", posix=False)
+
+def coolsecture_env():
+    env = os.environ.copy()
+    src = str(SRC_DIR)
+    env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    return env
+
+def ensure_dir(path: str):
+    Path(path).mkdir(parents=True, exist_ok=True)
+
+def remove_if_exists(path: str):
+    Path(path).unlink(missing_ok=True)
+
+def run_coolsecture(args):
+    cmd = [sys.executable, "-m", "coolsecture"] + [str(x) for x in args]
+    subprocess.run(cmd, check=True, cwd=str(WORKDIR), env=coolsecture_env())
+
+# -----------------------
+# Helpers
+# -----------------------
+def cool_file(sample):
+    """Return real file path (no ::group) for Snakemake existence checks."""
+    path = get_matrix_path(sample)
+    return path.split("::")[0]
+
+def cool_uri(sample):
+    """Return cooler URI: file(::/group) to pass to tools, or hic path."""
+    path = get_matrix_path(sample)
+    if path.lower().endswith(".hic"):
+        return path
+    base = path.split("::")[0]
+    return f"{base}::{COOL_GROUP}" if COOL_GROUP else base
+
+def get_synteny_path(pair):
+    """Return synteny file path (link or chain) for a pair."""
+    if "chain" in pair and pair["chain"]:
+        return str(pair["chain"])
+    if "link" in pair and pair["link"]:
+        return str(pair["link"])
+    raise KeyError(f"Pair {pair['a']}-{pair['b']} has neither 'chain' nor 'link' path defined")
+
+def get_synteny_type(pair):
+    """Return synteny file type: 'chain' or 'link'."""
+    if "chain" in pair and pair["chain"]:
+        return "chain"
+    if "link" in pair and pair["link"]:
+        return "link"
+    raise KeyError(f"Pair {pair['a']}-{pair['b']} has neither 'chain' nor 'link' path defined")
+
+def get_flag(params: str, name: str, default=None):
+    if not params:
+        return default
+    # match --name value  OR  --name=value
+    pat = re.compile(rf"(?:^|\s)--{re.escape(name)}(?:[=\s]+)(\S+)")
+    m = pat.search(params)
+    return m.group(1) if m else default
+
+def get_list(params: str, name: str):
+    if not params:
+        return []
+    # capture everything after flag until next ' --'
+    m = re.search(rf"(?:^|\s)--{re.escape(name)}(?:[=\s]+)([^-][\s\S]*?)((\s--\w+)|\s*$)", params)
+    if not m:
+        return []
+    chunk = m.group(1).strip()
+    return [x for x in chunk.split() if x]
+
+def figure_ext_from(params: str, default="pdf"):
+    return get_flag(params, "format", default) or default
+
+def strip_flag_block(params: str, name: str) -> str:
+    """Remove a flag and its values (until next '--xxx' or end)."""
+    if not params:
+        return ""
+    s = " " + params + " "
+    s = re.sub(rf"\s--{re.escape(name)}(?:[=\s]+)(?:[^\s-][\s\S]*?)(?=(\s--\w+|\s$))", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+# -----------------------
+# Parse formats/frames for output names
+# -----------------------
+# Force PDF outputs for all visualizations in the pipeline.
+_CSTAT_EXT  = "pdf"
+_METRIC_EXT = "pdf"
+_METRIC_KIND   = get_flag(METRIC_P, "metric", "pbad")
+_METRIC_FRAMES = [int(x) for x in (get_list(METRIC_P, "frames") or ["8"])]
+# To avoid duplicate --frames when running per-frame jobs:
+_METRIC_P_NO_FRAMES = strip_flag_block(METRIC_P, "frames")
+# Strip user-provided --format to guarantee PDF outputs.
+_CSTAT_P_NO_FORMAT  = strip_flag_block(CSTAT_P, "format")
+_METRIC_P_NO_FORMAT = strip_flag_block(_METRIC_P_NO_FRAMES, "format")
+
+# -----------------------
+# Canonical output paths (for rule all)
+# -----------------------
+def prep_rich(sample, res=None):
+    if res is None:
+        return f"step1/{sample}/{sample}.contacts.tsv"
+    return f"step1/{sample}/{sample}.r{res}.contacts.tsv"
+def mark_path(a,b):    return f"step2/{a}_{b}.mark"
+def downstream_lift_path(a,b, res=None):
+    if res is None:
+        return f"step2/{a}_{b}/{a}_{b}.Merged.liftContacts"
+    return f"step2/{a}_{b}/{a}_{b}.r{res}.Merged.liftContacts"
+def lift_path(a,b, res=None):
+    return downstream_lift_path(a, b, res)
+LIFT_OUTPUT_MULTI = "step2/{a}_{b}/{a}_{b}.r{res}.Merged.liftContacts"
+LIFT_OUTPUT_SINGLE = "step2/{a}_{b}/{a}_{b}.Merged.liftContacts"
+
+def cstat_files(a,b,res=None):
+    suffix = f".r{res}" if res is not None else ""
+    prefix = f"step3/{a}_{b}{suffix}"
+    return [
+        f"{prefix}.percentile_heatmap.{_CSTAT_EXT}",
+        f"{prefix}.distance_heatmap.{_CSTAT_EXT}",
+        f"{prefix}.ratio_scatter.{_CSTAT_EXT}",
+    ]
+
+def metric_files(a,b,res=None):
+    suffix = f".r{res}" if res is not None else ""
+    prefix = f"step3/{a}_{b}{suffix}"
+    outs = []
+    for fr in _METRIC_FRAMES:
+        outs.append(f"{prefix}.{_METRIC_KIND}.{fr}frame.bedGraph")
+        outs.append(f"{prefix}.{_METRIC_KIND}.{fr}frame.stat.{_METRIC_EXT}")
+    return outs
+
+def cool_files(a,b,res=None):
+    # Return .cool files for the workflow
+    suffix = f".r{res}" if res is not None else ""
+    return [
+        f"step3/{a}_{b}{suffix}.Observed.cool",
+        f"step3/{a}_{b}{suffix}.Control.cool"
+    ]
+
+# -----------------------
+# Rule: all
+# -----------------------
+def outputs_all():
+    outs = []
+    for s in SPECIES:
+        matrix_type = get_matrix_type(s)
+        if matrix_type == "hic":
+            outs.append(f"step0/{s}.hic.validated")
+        else:
+            outs.append(f"step0/{s}.cool.validated")
+        if RES_LIST:
+            for r in RES_LIST:
+                outs.append(prep_rich(s, r))
+        else:
+            outs.append(prep_rich(s))
+    for pair in PAIRS:
+        a, b = pair["a"], pair["b"]
+        synteny_type = get_synteny_type(pair)
+        if synteny_type == "chain":
+            outs.append(f"step0/{a}_{b}.chain.validated")
+        else:
+            outs.append(f"step0/{a}_{b}.link.validated")
+        outs.append(mark_path(a,b))
+        if RES_LIST:
+            for r in RES_LIST:
+                outs.append(lift_path(a,b, r))
+                outs += cstat_files(a,b, r)
+                outs += metric_files(a,b, r)
+                outs += cool_files(a,b, r)
+        else:
+            outs.append(lift_path(a,b))
+            outs += cstat_files(a,b)
+            outs += metric_files(a,b)
+            outs += cool_files(a,b)
+    return outs
+
+rule all:
+    input: outputs_all()
+
+# -----------------------
+# Validation rules
+# -----------------------
+rule validate_hic:
+    input:
+        hic=lambda wc: get_matrix_path(wc.sample)
+    output:
+        done="step0/{sample}.hic.validated"
+    run:
+        import os
+        hic_path = input.hic
+        if not hic_path.lower().endswith(".hic"):
+            raise ValueError(f"Expected .hic file, got: {hic_path}")
+        if not os.path.exists(hic_path):
+            raise FileNotFoundError(f"HIC file not found: {hic_path}")
+        with open(hic_path, "rb") as f:
+            header = f.read(4)
+            if header != b"HIC\x00":
+                raise ValueError(f"Invalid HIC file format (wrong magic bytes): {hic_path}")
+        Path(str(output.done)).parent.mkdir(parents=True, exist_ok=True)
+        Path(str(output.done)).touch()
+
+rule validate_chain:
+    input:
+        chain=lambda wc: get_synteny_path(next(p for p in PAIRS if p["a"]==wc.a and p["b"]==wc.b))
+    output:
+        done="step0/{a}_{b}.chain.validated"
+    run:
+        import os
+        chain_path = input.chain
+        if not chain_path.lower().endswith(".chain"):
+            raise ValueError(f"Expected .chain file, got: {chain_path}")
+        if not os.path.exists(chain_path):
+            raise FileNotFoundError(f"Chain file not found: {chain_path}")
+        with open(chain_path, "r") as f:
+            first_line = f.readline()
+            if not first_line.startswith("chain"):
+                raise ValueError(f"Invalid chain file format (missing 'chain' header): {chain_path}")
+        Path(str(output.done)).parent.mkdir(parents=True, exist_ok=True)
+        Path(str(output.done)).touch()
+
+rule validate_cool:
+    input:
+        cool=lambda wc: get_matrix_path(wc.sample)
+    output:
+        done="step0/{sample}.cool.validated"
+    run:
+        import os
+        cool_path = input.cool
+        if not (cool_path.lower().endswith(".cool") or cool_path.lower().endswith(".mcool")):
+            raise ValueError(f"Expected .cool/.mcool file, got: {cool_path}")
+        if not os.path.exists(cool_path):
+            raise FileNotFoundError(f"Cool file not found: {cool_path}")
+        Path(str(output.done)).parent.mkdir(parents=True, exist_ok=True)
+        Path(str(output.done)).touch()
+
+rule validate_link:
+    input:
+        link=lambda wc: get_synteny_path(next(p for p in PAIRS if p["a"]==wc.a and p["b"]==wc.b))
+    output:
+        done="step0/{a}_{b}.link.validated"
+    run:
+        import os
+        link_path = input.link
+        if not os.path.exists(link_path):
+            raise FileNotFoundError(f"Link file not found: {link_path}")
+        with open(link_path, "r") as f:
+            for i, line in enumerate(f):
+                if i >= 5:
+                    break
+                parts = line.strip().split()
+                if len(parts) >= 6:
+                    try:
+                        int(parts[1])
+                        int(parts[2])
+                        int(parts[4])
+                        int(parts[5])
+                    except ValueError:
+                        raise ValueError(f"Invalid link file format at line {i+1}: {link_path}")
+        Path(str(output.done)).parent.mkdir(parents=True, exist_ok=True)
+        Path(str(output.done)).touch()
+
+# -----------------------
+# step1: prepare (per sample)
+# -----------------------
+rule prepare_sample:
+    input:
+        matrix_file=lambda wc: cool_file(wc.sample),
+        validation=lambda wc: f"step0/{wc.sample}.hic.validated" if get_matrix_type(wc.sample) == "hic" else f"step0/{wc.sample}.cool.validated"
+    output:
+        rich=[f"step1/{{sample}}/{{sample}}.r{res}.contacts.tsv" for res in RES_LIST] if RES_LIST else "step1/{sample}/{sample}.contacts.tsv"
+    threads: DEFAULT_THREADS
+    params:
+        matrix_uri=lambda wc: cool_uri(wc.sample),
+        matrix_type=lambda wc: get_matrix_type(wc.sample),
+        extra=PREPARE_P
+    run:
+        ensure_dir(f"step1/{wildcards.sample}")
+        run_coolsecture([
+            "prepare",
+            "--matrix", params.matrix_uri,
+            *split_cli_args(params.extra),
+            "--interactive", "auto",
+            "--nthreads", threads,
+            "--out-prefix", f"step1/{wildcards.sample}/{wildcards.sample}",
+        ])
+
+# -----------------------
+# step2: link2mark (per pair), starting point
+# -----------------------
+rule link2mark:
+    input:
+        synteny=lambda wc: get_synteny_path(next(p for p in PAIRS if p["a"]==wc.a and p["b"]==wc.b)),
+        validation=lambda wc: f"step0/{wc.a}_{wc.b}.chain.validated" if get_synteny_type(next(p for p in PAIRS if p["a"]==wc.a and p["b"]==wc.b)) == "chain" else f"step0/{wc.a}_{wc.b}.link.validated"
+    output:
+        mark="step2/{a}_{b}.mark"
+    threads: DEFAULT_THREADS
+    params:
+        extra=LINK2MARK_P,
+        synteny_flag=lambda wc: "--chain" if get_synteny_type(next(p for p in PAIRS if p["a"]==wc.a and p["b"]==wc.b)) == "chain" else "--link"
+    run:
+        ensure_dir("step2")
+        run_coolsecture([
+            "link2mark",
+            params.synteny_flag,
+            input.synteny,
+            *split_cli_args(params.extra),
+            "--out-prefix", f"step2/{wildcards.a}_{wildcards.b}",
+        ])
+
+if RES_LIST:
+    # -----------------------
+    # step2: liftcontracts (per pair, per resolution)
+    # -----------------------
+    rule liftcontracts:
+        input:
+            richA="step1/{a}/{a}.r{res}.contacts.tsv",
+            richB="step1/{b}/{b}.r{res}.contacts.tsv",
+            faiA=lambda wc: SPEC[wc.a]["fai"],
+            faiB=lambda wc: SPEC[wc.b]["fai"],
+            mark="step2/{a}_{b}.mark"
+        output:
+            lifted=LIFT_OUTPUT_MULTI
+        threads: DEFAULT_THREADS
+        params:
+            extra=LIFTCONTRACTS_P
+        run:
+            out_prefix = f"step2/{wildcards.a}_{wildcards.b}/{wildcards.a}_{wildcards.b}.r{wildcards.res}"
+            args = [
+                "liftcontracts",
+                "--contact-a", input.richA,
+                "--contact-b", input.richB,
+                "--faidx-a", input.faiA,
+                "--faidx-b", input.faiB,
+                "--mark-ab", input.mark,
+                *split_cli_args(params.extra),
+                "--no-tags",
+                "--interactive", "auto",
+                "--nthreads", threads,
+                "--out-prefix", out_prefix,
+            ]
+            ensure_dir(f"step2/{wildcards.a}_{wildcards.b}")
+            run_coolsecture(args)
+            remove_if_exists(f"{out_prefix}.bidirectional.summary.plotly.html")
+            remove_if_exists(f"{out_prefix}.bidirectional.tags.plotly.html")
+
+    # -----------------------
+    # step3: contact-stat (per pair, per resolution)
+    # -----------------------
+    rule contact_stat:
+        input:
+            liftover=lambda wc: downstream_lift_path(wc.a, wc.b, int(wc.res)),
+            fai=lambda wc: SPEC[wc.a]["fai"],
+            statsA="step1/{a}/{a}.r{res}.stats.tsv",
+            statsB="step1/{b}/{b}.r{res}.stats.tsv"
+        output:
+            heat1=f"step3/{{a}}_{{b}}.r{{res}}.percentile_heatmap.{_CSTAT_EXT}",
+            heat2=f"step3/{{a}}_{{b}}.r{{res}}.distance_heatmap.{_CSTAT_EXT}",
+            scat =f"step3/{{a}}_{{b}}.r{{res}}.ratio_scatter.{_CSTAT_EXT}"
+        threads: DEFAULT_THREADS
+        params:
+            extra=_CSTAT_P_NO_FORMAT
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "contact-stat",
+                "--liftover", input.liftover,
+                "--faidx", input.fai,
+                "--stats-a", input.statsA,
+                "--stats-b", input.statsB,
+                *split_cli_args(params.extra),
+                "--format", "pdf",
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}.r{wildcards.res}",
+            ])
+
+    # -----------------------
+    # step3: metric (per pair, per frame, per resolution)
+    # -----------------------
+    rule metric_one_frame:
+        input:
+            liftover=lambda wc: downstream_lift_path(wc.a, wc.b, int(wc.res)),
+            fai=lambda wc: SPEC[wc.a]["fai"]
+        output:
+            bg="step3/{a}_{b}.r{res}." + _METRIC_KIND + ".{fr}frame.bedGraph",
+            stat="step3/{a}_{b}.r{res}." + _METRIC_KIND + ".{fr}frame.stat." + _METRIC_EXT + ""
+        threads: DEFAULT_THREADS
+        params:
+            extra=_METRIC_P_NO_FORMAT
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "metric",
+                "--liftover", input.liftover,
+                "--faidx", input.fai,
+                "--frames", wildcards.fr,
+                *split_cli_args(params.extra),
+                "--format", "pdf",
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}.r{wildcards.res}",
+            ])
+
+    # -----------------------
+    # step3: lift2matrix (per pair, per resolution)
+    # -----------------------
+    rule lift2matrix:
+        input:
+            liftover=lambda wc: downstream_lift_path(wc.a, wc.b, int(wc.res)),
+            fai=lambda wc: SPEC[wc.a]["fai"]
+        output:
+            obs="step3/{a}_{b}.r{res}.Observed.cool",
+            ctl="step3/{a}_{b}.r{res}.Control.cool"
+        threads: DEFAULT_THREADS
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "lift2matrix",
+                "--liftover", input.liftover,
+                "--faidx", input.fai,
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}.r{wildcards.res}",
+            ])
+else:
+    # -----------------------
+    # step2: liftcontracts (per pair)
+    # -----------------------
+    rule liftcontracts:
+        input:
+            richA="step1/{a}/{a}.contacts.tsv",
+            richB="step1/{b}/{b}.contacts.tsv",
+            faiA=lambda wc: SPEC[wc.a]["fai"],
+            faiB=lambda wc: SPEC[wc.b]["fai"],
+            mark="step2/{a}_{b}.mark"
+        output:
+            lifted=LIFT_OUTPUT_SINGLE
+        threads: DEFAULT_THREADS
+        params:
+            extra=LIFTCONTRACTS_P
+        run:
+            out_prefix = f"step2/{wildcards.a}_{wildcards.b}/{wildcards.a}_{wildcards.b}"
+            args = [
+                "liftcontracts",
+                "--contact-a", input.richA,
+                "--contact-b", input.richB,
+                "--faidx-a", input.faiA,
+                "--faidx-b", input.faiB,
+                "--mark-ab", input.mark,
+                *split_cli_args(params.extra),
+                "--no-tags",
+                "--interactive", "auto",
+                "--nthreads", threads,
+                "--out-prefix", out_prefix,
+            ]
+            ensure_dir(f"step2/{wildcards.a}_{wildcards.b}")
+            run_coolsecture(args)
+            remove_if_exists(f"{out_prefix}.bidirectional.summary.plotly.html")
+            remove_if_exists(f"{out_prefix}.bidirectional.tags.plotly.html")
+
+    # -----------------------
+    # step3: contact-stat (per pair)
+    # -----------------------
+    rule contact_stat:
+        input:
+            liftover=lambda wc: downstream_lift_path(wc.a, wc.b),
+            fai=lambda wc: SPEC[wc.a]["fai"],
+            statsA="step1/{a}/{a}.stats.tsv",
+            statsB="step1/{b}/{b}.stats.tsv"
+        output:
+            heat1=f"step3/{{a}}_{{b}}.percentile_heatmap.{_CSTAT_EXT}",
+            heat2=f"step3/{{a}}_{{b}}.distance_heatmap.{_CSTAT_EXT}",
+            scat =f"step3/{{a}}_{{b}}.ratio_scatter.{_CSTAT_EXT}"
+        threads: DEFAULT_THREADS
+        params:
+            extra=_CSTAT_P_NO_FORMAT
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "contact-stat",
+                "--liftover", input.liftover,
+                "--faidx", input.fai,
+                "--stats-a", input.statsA,
+                "--stats-b", input.statsB,
+                *split_cli_args(params.extra),
+                "--format", "pdf",
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
+            ])
+
+    # -----------------------
+    # step3: metric (per pair, per frame)  -> better parallelism
+    # -----------------------
+    rule metric_one_frame:
+        input:
+            liftover=lambda wc: downstream_lift_path(wc.a, wc.b),
+            fai=lambda wc: SPEC[wc.a]["fai"]
+        output:
+            bed=f"step3/{{a}}_{{b}}.{_METRIC_KIND}.{{fr}}frame.bedGraph",
+            fig=f"step3/{{a}}_{{b}}.{_METRIC_KIND}.{{fr}}frame.stat.{_METRIC_EXT}"
+        threads: DEFAULT_THREADS
+        params:
+            extra=_METRIC_P_NO_FORMAT
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "metric",
+                "--liftover", input.liftover,
+                "--faidx", input.fai,
+                "--frames", wildcards.fr,
+                *split_cli_args(params.extra),
+                "--format", "pdf",
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
+            ])
+
+    # -----------------------
+    # step3: lift2matrix (per pair)
+    # -----------------------
+    rule lift2matrix:
+        input:
+            liftover=lambda wc: downstream_lift_path(wc.a, wc.b),
+            fai=lambda wc: SPEC[wc.a]["fai"]
+        output:
+            obs="step3/{a}_{b}.Observed.cool",
+            ctl="step3/{a}_{b}.Control.cool"
+        threads: DEFAULT_THREADS
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "lift2matrix",
+                "--liftover", input.liftover,
+                "--faidx", input.fai,
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
+            ])
+
+

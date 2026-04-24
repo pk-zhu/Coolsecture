@@ -1,0 +1,20 @@
+species:
+  Asu:
+    fai: step0/Asu.fa.fai
+    cool: cools/Asu.mcool
+  Ath:
+    fai: step0/Ath.fa.fai
+    cool: cools/Ath.mcool
+
+pairs:
+  - { a: Asu, b: Ath, link: step0/Asu_Ath.link }
+
+default_threads: 10
+
+parameters:
+  link2mark_parameters: "--thr-len 300 --step-len 150"
+  # prepare_parameters: "--max-distance 500000000 --inter --resolution=10000,20000,40000,100000"
+  prepare_parameters: "--max-distance 5000000000 --inter --resolution=40000,100000"
+  liftcontracts_parameters: "--agg-frame 400000 --dups-filter coverage --model balanced --tmp-dir .snakemake/tmp/liftcontracts --spill-threshold-mb 1 --hash-shards 64 --pbad-mode auto --pbad-auto-threshold-mb 1024"
+  contact_stat_parameters: "--bins 400 --cmap RdBu_r --max-dist-mb 5000 --ratio-scatter-standard c-intersecture --seed 20260329"
+  metric_parameters: "--frames 8 --metric pbad"
