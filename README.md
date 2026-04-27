@@ -90,7 +90,7 @@ Typical inputs are:
 Six-column `.link` format:
 
 ```text
-chromA  startA  endA  chromB  startB  endB
+chromA  positionA_1  positionA_2  chromB  positionB_1  positionB_2
 ```
 
 Coolsecture accepts normalized cooler files. For `.cool` and `.mcool`, the bins
