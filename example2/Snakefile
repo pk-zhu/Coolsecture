@@ -208,17 +208,17 @@ def cool_files(a,b,res=None):
     suffix = f".r{res}" if res is not None else ""
     return [
         f"step3/{a}_{b}{suffix}.Observed.cool",
-        f"step3/{a}_{b}{suffix}.Control.cool"
+        f"step3/{a}_{b}{suffix}.Target.cool"
     ]
 
-def similarity_files(a,b,res=None):
-    # Return similarity files for the workflow
+def cv_files(a,b,res=None):
+    # Return cross-validate files for the workflow
     suffix = f".r{res}" if res is not None else ""
-    sim_prefix = f"step3/{a}_vs_{b}_on_hg38{suffix}"
+    cv_prefix = f"step3/{a}_vs_{b}_on_hg38{suffix}"
     return [
-        f"{sim_prefix}.scc.tsv",
-        f"{sim_prefix}.scc.summary.tsv",
-        f"{sim_prefix}.scc.pdf"
+        f"{cv_prefix}.scc.tsv",
+        f"{cv_prefix}.scc.summary.tsv",
+        f"{cv_prefix}.scc.pdf"
     ]
 
 # -----------------------
@@ -253,13 +253,13 @@ def outputs_all():
                 outs += cstat_files(a,b, r)
                 outs += metric_files(a,b, r)
                 outs += cool_files(a,b, r)
-                outs += similarity_files(a,b, r)
+                outs += cv_files(a,b, r)
         else:
             outs.append(lift_path(a,b))
             outs += cstat_files(a,b)
             outs += metric_files(a,b)
             outs += cool_files(a,b)
-            outs += similarity_files(a,b)
+            outs += cv_files(a,b)
     return outs
 
 rule all:
@@ -495,7 +495,7 @@ if RES_LIST:
             fai=lambda wc: SPEC[wc.a]["fai"]
         output:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
-            ctl="step3/{a}_{b}.r{res}.Control.cool"
+            ctl="step3/{a}_{b}.r{res}.Target.cool"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
@@ -507,12 +507,12 @@ if RES_LIST:
             ])
 
     # -----------------------
-    # step3: similarity (per pair, per resolution)
+    # step3: cross-validate (per pair, per resolution)
     # -----------------------
-    rule similarity:
+    rule cross_validate:
         input:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
-            ctl="step3/{a}_{b}.r{res}.Control.cool"
+            ctl="step3/{a}_{b}.r{res}.Target.cool"
         output:
             scc_tsv="step3/{a}_vs_{b}_on_hg38.r{res}.scc.tsv",
             scc_summary="step3/{a}_vs_{b}_on_hg38.r{res}.scc.summary.tsv",
@@ -521,8 +521,8 @@ if RES_LIST:
         run:
             ensure_dir("step3")
             run_coolsecture([
-                "similarity",
-                "--matrix-a", input.ctl,
+                "cross-validate",
+                "--matrix-a", input.tgt,
                 "--matrix-b", input.obs,
                 "--format", "pdf",
                 "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}_on_hg38.r{wildcards.res}",
@@ -626,7 +626,7 @@ else:
             fai=lambda wc: SPEC[wc.a]["fai"]
         output:
             obs="step3/{a}_{b}.Observed.cool",
-            ctl="step3/{a}_{b}.Control.cool"
+            ctl="step3/{a}_{b}.Target.cool"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
@@ -638,12 +638,12 @@ else:
             ])
 
     # -----------------------
-    # step3: similarity (per pair)
+    # step3: cross-validate (per pair)
     # -----------------------
-    rule similarity:
+    rule cross_validate:
         input:
             obs="step3/{a}_{b}.Observed.cool",
-            ctl="step3/{a}_{b}.Control.cool"
+            ctl="step3/{a}_{b}.Target.cool"
         output:
             scc_tsv="step3/{a}_vs_{b}_on_hg38.scc.tsv",
             scc_summary="step3/{a}_vs_{b}_on_hg38.scc.summary.tsv",
@@ -652,8 +652,8 @@ else:
         run:
             ensure_dir("step3")
             run_coolsecture([
-                "similarity",
-                "--matrix-a", input.ctl,
+                "cross-validate",
+                "--matrix-a", input.tgt,
                 "--matrix-b", input.obs,
                 "--format", "pdf",
                 "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}_on_hg38",
