@@ -18,7 +18,7 @@ ready summary outputs.
 - Convert `.cool`, `.mcool`, or `.hic` matrices to percentile-ranked contact
   tables.
 - Lift contacts in both directions and report reciprocal consistency metrics.
-- Generate observed/control `.cool` or `.hic` matrices from lifted contacts.
+- Generate observed/target `.cool` or `.hic` matrices from lifted contacts.
 - Compute PBAD-style metrics, contact-stat plots, split-triangle cross plots, and
   HiCRep-style SCC similarity.
 - Run either command-by-command, through `run-all`, or through the example
@@ -69,10 +69,10 @@ Available commands:
 | `liftcontracts` | Run A->B and B->A contact liftover and reciprocal summaries. |
 | `contact-stat` | Plot percentile, distance, and ratio diagnostics from lifted contacts. |
 | `metric` | Compute PBAD and related metrics as bedGraph plus figures. |
-| `lift2matrix` | Convert lifted contacts to observed/control `.cool` or `.hic` matrices. |
+| `lift2matrix` | Convert lifted contacts to observed/target `.cool` or `.hic` matrices. |
 | `plot-cross` | Draw split-triangle cross-species heatmaps for a locus. |
 | `multiscale` | Summarize PBAD stability across multiple resolutions. |
-| `similarity` | Compute stratum-adjusted correlation between matched matrices. |
+| `cross-validate` | Compute stratum-adjusted correlation (HiCRep-style SCC) between matched matrices. |
 | `run-all` | Run the main end-to-end pipeline from FASTA and matrices. |
 
 Note: in the current CLI, FASTA index arguments are named `--fadix`,
@@ -90,7 +90,7 @@ Typical inputs are:
 Six-column `.link` format:
 
 ```text
-chromA  positionA_1  positionA_2  chromB  positionB_1  positionB_2
+chromA  startA  endA  chromB  startB  endB
 ```
 
 Coolsecture accepts normalized cooler files. For `.cool` and `.mcool`, the bins
@@ -315,7 +315,7 @@ Outputs:
 Supported `--metric` values are `pbad`, `log`, `stripe`, `pearsone`, and
 `spearman`.
 
-### 7. Reconstruct observed/control matrices
+### 7. Reconstruct observed/target matrices
 
 ```bash
 coolsecture lift2matrix \
@@ -328,16 +328,16 @@ coolsecture lift2matrix \
 Outputs:
 
 - `*.Observed.cool`
-- `*.Control.cool`
+- `*.Target.cool`
 
 Use `--format hic` or `--format both` if `juicer_tools` is available.
 
 ### 8. Compute matrix similarity
 
 ```bash
-coolsecture similarity \
+coolsecture cross-validate \
   --matrix-a step3/Asu_Ath.r40000.Observed.cool \
-  --matrix-b step3/Asu_Ath.r40000.Control.cool \
+  --matrix-b step3/Asu_Ath.r40000.Target.cool \
   --max-dist-mb 10 \
   --format pdf \
   --out-prefix step3/Asu_Ath.r40000
@@ -356,7 +356,7 @@ coolsecture plot-cross \
   --liftover step2/Asu_Ath/Asu_Ath.r40000.Merged.liftContacts \
   --fadix step0/Asu.fa.fai \
   --locus chr1:0-10000000 \
-  --heat obs,ctl \
+  --heat obs-tgt \
   --format pdf \
   --out-prefix step3/Asu_Ath.r40000
 ```
@@ -397,6 +397,31 @@ python -m pip install -e ".[viz]"
 
 The Snakemake examples are designed around PDF outputs and may remove Plotly HTML
 artifacts to keep workflow outputs predictable.
+
+## Repository Hygiene
+
+Recommended files to keep in the GitHub repository:
+
+- `src/`
+- `pyproject.toml`
+- `README.md`
+- `LICENSE`
+- lightweight example `Snakefile` and `config.yaml` files
+- small synthetic or metadata-only example inputs, if needed
+
+Recommended files to exclude from Git:
+
+- `.snakemake/`
+- `.codex_tmp/`
+- `__pycache__/`
+- `src/*.egg-info/`
+- `step0/`, `step1/`, `step2/`, `step3/`
+- large `.hic`, `.cool`, `.mcool`, `.tsv`, `.bedGraph`, and generated figure files
+- local backup or benchmark directories such as `bak/`
+
+For reproducible public releases, put large data on Zenodo, Figshare, SRA/GEO, or
+another data repository, then link to it from this README or from a separate data
+availability document.
 
 ## Citation
 
