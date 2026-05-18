@@ -1,4 +1,4 @@
-﻿# run_coolsecture.snk
+# run_coolsecture.snk
 # - Pipeline starts at link2mark (input: absolute *.link)
 # - CLI args are aggregated in config.parameters.*_parameters
 # - Species cool path is absolute file path; Snakefile appends ::group (cool_group) when calling
@@ -201,7 +201,7 @@ def cool_files(a,b,res=None):
     suffix = f".r{res}" if res is not None else ""
     return [
         f"step3/{a}_{b}{suffix}.Observed.cool",
-        f"step3/{a}_{b}{suffix}.Control.cool"
+        f"step3/{a}_{b}{suffix}.Target.cool"
     ]
 
 # -----------------------
@@ -218,8 +218,10 @@ def outputs_all():
         if RES_LIST:
             for r in RES_LIST:
                 outs.append(prep_rich(s, r))
+                outs.append(f"step1/{s}/{s}.r{r}.stats.tsv")
         else:
             outs.append(prep_rich(s))
+            outs.append(f"step1/{s}/{s}.stats.tsv")
     for pair in PAIRS:
         a, b = pair["a"], pair["b"]
         synteny_type = get_synteny_type(pair)
@@ -334,7 +336,8 @@ rule prepare_sample:
         matrix_file=lambda wc: cool_file(wc.sample),
         validation=lambda wc: f"step0/{wc.sample}.hic.validated" if get_matrix_type(wc.sample) == "hic" else f"step0/{wc.sample}.cool.validated"
     output:
-        rich=[f"step1/{{sample}}/{{sample}}.r{res}.contacts.tsv" for res in RES_LIST] if RES_LIST else "step1/{sample}/{sample}.contacts.tsv"
+        rich=[f"step1/{{sample}}/{{sample}}.r{res}.contacts.tsv" for res in RES_LIST] if RES_LIST else "step1/{sample}/{sample}.contacts.tsv",
+        stats=[f"step1/{{sample}}/{{sample}}.r{res}.stats.tsv" for res in RES_LIST] if RES_LIST else "step1/{sample}/{sample}.stats.tsv"
     threads: DEFAULT_THREADS
     params:
         matrix_uri=lambda wc: cool_uri(wc.sample),
@@ -396,8 +399,8 @@ if RES_LIST:
                 "liftcontracts",
                 "--contact-a", input.richA,
                 "--contact-b", input.richB,
-                "--faidx-a", input.faiA,
-                "--faidx-b", input.faiB,
+                "--fadix-a", input.faiA,
+                "--fadix-b", input.faiB,
                 "--mark-ab", input.mark,
                 *split_cli_args(params.extra),
                 "--no-tags",
@@ -431,7 +434,7 @@ if RES_LIST:
             run_coolsecture([
                 "contact-stat",
                 "--liftover", input.liftover,
-                "--faidx", input.fai,
+                "--fadix", input.fai,
                 "--stats-a", input.statsA,
                 "--stats-b", input.statsB,
                 *split_cli_args(params.extra),
@@ -457,7 +460,7 @@ if RES_LIST:
             run_coolsecture([
                 "metric",
                 "--liftover", input.liftover,
-                "--faidx", input.fai,
+                "--fadix", input.fai,
                 "--frames", wildcards.fr,
                 *split_cli_args(params.extra),
                 "--format", "pdf",
@@ -473,14 +476,14 @@ if RES_LIST:
             fai=lambda wc: SPEC[wc.a]["fai"]
         output:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
-            ctl="step3/{a}_{b}.r{res}.Control.cool"
+            tgt="step3/{a}_{b}.r{res}.Target.cool"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "lift2matrix",
                 "--liftover", input.liftover,
-                "--faidx", input.fai,
+                "--fadix", input.fai,
                 "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}.r{wildcards.res}",
             ])
 else:
@@ -505,8 +508,8 @@ else:
                 "liftcontracts",
                 "--contact-a", input.richA,
                 "--contact-b", input.richB,
-                "--faidx-a", input.faiA,
-                "--faidx-b", input.faiB,
+                "--fadix-a", input.faiA,
+                "--fadix-b", input.faiB,
                 "--mark-ab", input.mark,
                 *split_cli_args(params.extra),
                 "--no-tags",
@@ -540,7 +543,7 @@ else:
             run_coolsecture([
                 "contact-stat",
                 "--liftover", input.liftover,
-                "--faidx", input.fai,
+                "--fadix", input.fai,
                 "--stats-a", input.statsA,
                 "--stats-b", input.statsB,
                 *split_cli_args(params.extra),
@@ -566,7 +569,7 @@ else:
             run_coolsecture([
                 "metric",
                 "--liftover", input.liftover,
-                "--faidx", input.fai,
+                "--fadix", input.fai,
                 "--frames", wildcards.fr,
                 *split_cli_args(params.extra),
                 "--format", "pdf",
@@ -582,15 +585,13 @@ else:
             fai=lambda wc: SPEC[wc.a]["fai"]
         output:
             obs="step3/{a}_{b}.Observed.cool",
-            ctl="step3/{a}_{b}.Control.cool"
+            tgt="step3/{a}_{b}.Target.cool"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "lift2matrix",
                 "--liftover", input.liftover,
-                "--faidx", input.fai,
+                "--fadix", input.fai,
                 "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
             ])
-
-
