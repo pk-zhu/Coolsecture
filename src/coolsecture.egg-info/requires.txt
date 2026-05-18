@@ -1,0 +1,16 @@
+numpy
+pandas
+matplotlib
+cooler
+h5py
+
+[hic]
+hic-straw
+hic2cool
+
+[stats]
+scipy
+scikit-learn
+
+[viz]
+plotly>=5.0

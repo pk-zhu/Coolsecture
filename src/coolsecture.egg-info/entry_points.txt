@@ -1,0 +1,2 @@
+[console_scripts]
+coolsecture = coolsecture.__main__:main
