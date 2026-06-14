@@ -11,6 +11,16 @@ focus on reproducible command-line workflows, cooler/mcool/hic input support,
 multi-resolution processing, disk-spill paths for larger runs, and publication
 ready summary outputs.
 
+## Changelog
+
+### v0.3.2 - 2026-06-14
+
+- Set publication-ready static plots to use editable PDF/SVG text with Carlito-preferred fonts.
+- Added multi-resolution `.hic` support in `prepare` and `run-all`.
+- Added chromosome-name mapping output when liftover matrix generation uses aliases.
+- Added `run-all --auto` parameter selection with `auto_params.tsv` reporting.
+- Added automatic `plot-cross` region selection for top differential/conserved 2 Mb PBAD-ranked regions.
+
 ## Main Features
 
 - Convert assemblies to syntenic links with `minimap2`.
