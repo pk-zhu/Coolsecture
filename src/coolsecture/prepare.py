@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
 import os
 import sys
-import io
-import math
 import argparse
 import time
 import concurrent.futures
 from pathlib import Path
 from typing import Tuple
-
-# os.environ.setdefault("OMP_NUM_THREADS", "1")
-# os.environ.setdefault("MKL_NUM_THREADS", "1")
-# os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-# os.environ.setdefault("NUMEXPR_MAX_THREADS", "1")
 
 import numpy as np
 import cooler

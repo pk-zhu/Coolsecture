@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import argparse, numpy as np, os, re, glob
+import argparse, numpy as np, os
 from .post_common import (
     configure_matplotlib_for_publication,
     infer_resolution_from_liftover, ChromIndexingFAI, read_chr_sizes_from_fai,
     read_contacts, _parse_locus, _bins_for_region, _matrix_for_regions,
-    make_pinkblue_cmap, _save_fig
+    make_pinkblue_cmap, _save_fig, resolve_liftover_inputs
 )
 configure_matplotlib_for_publication()
 import matplotlib.pyplot as plt
@@ -254,24 +254,6 @@ def main():
     if args.locus is None and args.locus2 is not None:
         raise SystemExit("--locus2 can only be used together with --locus")
 
-    def resolve_inputs():
-        if args.liftover_prefix:
-            paths = sorted(glob.glob(f"{args.liftover_prefix}.r*.liftContacts"))
-            if not paths:
-                single = f"{args.liftover_prefix}.liftContacts"
-                if os.path.exists(single):
-                    return [(single, "")]
-                raise SystemExit(f"No liftover files found for prefix: {args.liftover_prefix}")
-            out = []
-            for pth in paths:
-                m = re.search(r"\\.r(\\d+)\\.liftContacts$", pth)
-                suffix = f".r{m.group(1)}" if m else ""
-                out.append((pth, suffix))
-            return out
-        if not args.liftover:
-            raise SystemExit("Provide --liftover or --liftover-prefix")
-        return [(args.liftover, "")]
-
     def run_one(liftover_path: str, out_prefix: str, preloaded_contacts=None):
         Order = ChromIndexingFAI(args.fadix)
         res   = infer_resolution_from_liftover(liftover_path)
@@ -447,7 +429,7 @@ def main():
         _save_fig(fig, out, fmt=args.format, dpi=args.dpi)
         plt.close(fig)
 
-    for liftover_path, suffix in resolve_inputs():
+    for liftover_path, suffix in resolve_liftover_inputs(args.liftover, args.liftover_prefix):
         run_one(liftover_path, args.out_prefix + suffix)
 
 if __name__ == "__main__":

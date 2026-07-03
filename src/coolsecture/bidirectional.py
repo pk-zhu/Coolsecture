@@ -6,6 +6,7 @@ import tempfile
 import logging
 from collections import OrderedDict
 from pathlib import Path
+from multiprocessing import get_context
 
 import numpy as np
 
@@ -605,6 +606,12 @@ def main():
         help="Enable spill mode when contact/liftover file size >= this MB (0 disables)",
     )
     p.add_argument("--hash-shards", type=int, default=16, help="Shard count used by spill mode in liftcontacts")
+    p.add_argument(
+        "--parallel-directions",
+        action="store_true",
+        help="Run A->B and B->A liftover concurrently in separate processes "
+             "(doubles peak memory and may oversubscribe CPU)",
+    )
     p.add_argument("--out-prefix", required=True, help="Output prefix")
     args = p.parse_args()
 
@@ -618,7 +625,7 @@ def main():
             return {}
         out = {}
         for fpath in files:
-            m = re.search(r"\\.r(\\d+)\\.contacts\\.tsv$", fpath)
+            m = re.search(r"\.r(\d+)\.contacts\.tsv$", fpath)
             if m:
                 out[int(m.group(1))] = fpath
         return out
@@ -662,39 +669,41 @@ def _run_bidirectional(contact_a, contact_b, args, suffix):
         cleanup_mark_ba = True
 
     try:
-        logger.info("Running A->B liftover...")
-        run_liftover(
-            contact_a,
-            contact_b,
-            args.fadix_a,
-            args.fadix_b,
-            mark_ab,
-            args.agg_frame,
-            args.dups_filter,
-            args.model,
-            args.out_prefix + suffix + ".AtoB",
-            args.nthreads,
+        ab_args = (
+            contact_a, contact_b, args.fadix_a, args.fadix_b, mark_ab,
+            args.agg_frame, args.dups_filter, args.model,
+            args.out_prefix + suffix + ".AtoB", args.nthreads,
+        )
+        ba_args = (
+            contact_b, contact_a, args.fadix_b, args.fadix_a, mark_ba,
+            args.agg_frame, args.dups_filter, args.model,
+            args.out_prefix + suffix + ".BtoA", args.nthreads,
+        )
+        kwargs = dict(
             tmp_dir=args.tmp_dir,
             spill_threshold_mb=args.spill_threshold_mb,
             hash_shards=args.hash_shards,
         )
-        
-        logger.info("Running B->A liftover...")
-        run_liftover(
-            contact_b,
-            contact_a,
-            args.fadix_b,
-            args.fadix_a,
-            mark_ba,
-            args.agg_frame,
-            args.dups_filter,
-            args.model,
-            args.out_prefix + suffix + ".BtoA",
-            args.nthreads,
-            tmp_dir=args.tmp_dir,
-            spill_threshold_mb=args.spill_threshold_mb,
-            hash_shards=args.hash_shards,
-        )
+
+        if args.parallel_directions:
+            logger.info("Running A->B and B->A liftover concurrently...")
+            ctx = get_context("fork")
+            p_ab = ctx.Process(target=run_liftover, args=ab_args, kwargs=kwargs)
+            p_ba = ctx.Process(target=run_liftover, args=ba_args, kwargs=kwargs)
+            p_ab.start()
+            p_ba.start()
+            p_ab.join()
+            p_ba.join()
+            if p_ab.exitcode != 0 or p_ba.exitcode != 0:
+                raise SystemExit(
+                    f"Concurrent liftover failed (A->B exit={p_ab.exitcode}, "
+                    f"B->A exit={p_ba.exitcode})"
+                )
+        else:
+            logger.info("Running A->B liftover...")
+            run_liftover(*ab_args, **kwargs)
+            logger.info("Running B->A liftover...")
+            run_liftover(*ba_args, **kwargs)
 
         lift_ab = args.out_prefix + suffix + ".AtoB.liftContacts"
         lift_ba = args.out_prefix + suffix + ".BtoA.liftContacts"

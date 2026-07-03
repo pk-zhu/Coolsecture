@@ -20,7 +20,7 @@ def _resolve_liftover_prefix(prefix: str):
         raise SystemExit(f"No liftover files found for prefix: {prefix}")
     out = []
     for p in paths:
-        m = re.search(r"\\.r(\\d+)\\.liftContacts$", p)
+        m = re.search(r"\.r(\d+)\.liftContacts$", p)
         r = int(m.group(1)) if m else None
         out.append((p, r))
     return out

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import argparse, numpy as np, os, re, glob
+import argparse, numpy as np
 from .post_common import (
     infer_resolution_from_liftover, ChromIndexingFAI, read_contacts,
-    metricCalc, randomize_contacts, make_pinkblue_cmap, make_diverging_norm, _save_fig
+    metricCalc, randomize_contacts, _save_fig, resolve_liftover_inputs
 )
 import matplotlib.pyplot as plt
 
@@ -21,24 +21,6 @@ def main():
     p.add_argument("--dpi", type=int, default=300, help="DPI for raster outputs")
     p.add_argument("--out-prefix", required=True, help="Output prefix for bedGraph and figures")
     args = p.parse_args()
-
-    def resolve_inputs():
-        if args.liftover_prefix:
-            paths = sorted(glob.glob(f"{args.liftover_prefix}.r*.liftContacts"))
-            if not paths:
-                single = f"{args.liftover_prefix}.liftContacts"
-                if os.path.exists(single):
-                    return [(single, "")]
-                raise SystemExit(f"No liftover files found for prefix: {args.liftover_prefix}")
-            out = []
-            for pth in paths:
-                m = re.search(r"\\.r(\\d+)\\.liftContacts$", pth)
-                suffix = f".r{m.group(1)}" if m else ""
-                out.append((pth, suffix))
-            return out
-        if not args.liftover:
-            raise SystemExit("Provide --liftover or --liftover-prefix")
-        return [(args.liftover, "")]
 
     def run_one(liftover_path: str, out_prefix: str):
         res = infer_resolution_from_liftover(liftover_path)
@@ -96,7 +78,7 @@ def main():
             _save_fig(fig, out_fig, fmt=args.format, dpi=args.dpi)
             plt.close(fig)
 
-    for liftover_path, suffix in resolve_inputs():
+    for liftover_path, suffix in resolve_liftover_inputs(args.liftover, args.liftover_prefix):
         run_one(liftover_path, args.out_prefix + suffix)
 
 if __name__ == "__main__":

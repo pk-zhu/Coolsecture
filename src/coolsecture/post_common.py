@@ -28,20 +28,12 @@ def configure_matplotlib_for_publication(font_family: str = "Carlito"):
         _FONT_WARNED = True
 
 configure_matplotlib_for_publication()
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
-from matplotlib.lines import Line2D
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 try:
     import scipy.stats as st
     HAVE_SCIPY = True
 except Exception:
     HAVE_SCIPY = False
-try:
-    from sklearn.neighbors import KernelDensity
-    HAVE_SKLEARN = True
-except Exception:
-    HAVE_SKLEARN = False
 import pandas as pd
 
 def infer_resolution_from_liftover(path: str, sample_lines: int = 200000) -> int:
@@ -112,6 +104,25 @@ def read_chr_sizes_from_fai(path: str) -> Dict[str,int]:
                 continue
             sizes[toks[0]] = int(toks[1])
     return sizes
+
+def resolve_liftover_inputs(liftover: str, liftover_prefix: str) -> List[Tuple[str, str]]:
+    import glob
+    if liftover_prefix:
+        paths = sorted(glob.glob(f"{liftover_prefix}.r*.liftContacts"))
+        if not paths:
+            single = f"{liftover_prefix}.liftContacts"
+            if os.path.exists(single):
+                return [(single, "")]
+            raise SystemExit(f"No liftover files found for prefix: {liftover_prefix}")
+        out = []
+        for pth in paths:
+            m = re.search(r"\.r(\d+)\.liftContacts$", pth)
+            suffix = f".r{m.group(1)}" if m else ""
+            out.append((pth, suffix))
+        return out
+    if not liftover:
+        raise SystemExit("Provide --liftover or --liftover-prefix")
+    return [(liftover, "")]
 
 def chromosome_aliases(name: str) -> List[str]:
     aliases = [name]
@@ -266,7 +277,7 @@ def _reciprocal_stats(map_ab: Dict, map_ba: Dict):
 def extract_arrays_for_contact_stat(lift_path: str, resolution: int, Order: Dict):
     pA, pB, dA, dB, ok = [], [], [], [], []
     with open(lift_path) as f:
-        header = f.readline()
+        f.readline()
         for line in f:
             a = line.split()
             if len(a) < 16:
@@ -660,18 +671,11 @@ def _pixels_from_contacts(contacts: dict, resolution: int, chr_sizes: dict, whic
     return pd.DataFrame({'bin1_id': bin1, 'bin2_id': bin2, 'count': count})
 
 def _write_cool_minimal(path, bins_df, px_df, assembly=None):
-    import cooler
     import h5py
-    import numpy as np
-    # Try a simple approach without dask
-    # First create the file structure
     import os
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Create cooler file without dask
     from cooler import create_cooler
-    # Convert pixels to numpy arrays for faster processing
     if not px_df.empty:
-        # Create cooler file using direct numpy arrays
         create_cooler(
             path,
             bins=bins_df,
@@ -680,7 +684,6 @@ def _write_cool_minimal(path, bins_df, px_df, assembly=None):
             ordered=True
         )
     else:
-        # Create empty cooler file
         create_cooler(
             path,
             bins=bins_df,

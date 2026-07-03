@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import argparse, os, re, glob
+import argparse, os
 import numpy as np
 from .post_common import (
     infer_resolution_from_liftover, ChromIndexingFAI, read_contacts,
     extract_arrays_for_contact_stat, _log2_ratio_safe,
-    make_pinkblue_cmap, make_diverging_norm, _save_fig
+    make_pinkblue_cmap, make_diverging_norm, _save_fig, resolve_liftover_inputs
 )
 import matplotlib.pyplot as plt
 
@@ -295,24 +295,6 @@ def main():
             np.asarray(oB, dtype=float),
         )
 
-    def resolve_inputs():
-        if args.liftover_prefix:
-            paths = sorted(glob.glob(f"{args.liftover_prefix}.r*.liftContacts"))
-            if not paths:
-                single = f"{args.liftover_prefix}.liftContacts"
-                if os.path.exists(single):
-                    return [(single, "")]
-                raise SystemExit(f"No liftover files found for prefix: {args.liftover_prefix}")
-            out = []
-            for pth in paths:
-                m = re.search(r"\\.r(\\d+)\\.liftContacts$", pth)
-                suffix = f".r{m.group(1)}" if m else ""
-                out.append((pth, suffix))
-            return out
-        if not args.liftover:
-            raise SystemExit("Provide --liftover or --liftover-prefix")
-        return [(args.liftover, "")]
-
     def run_one(liftover_path: str, out_prefix: str):
         res = infer_resolution_from_liftover(liftover_path)
         Order = ChromIndexingFAI(args.fadix)
@@ -548,7 +530,7 @@ def main():
         _save_fig(fig3, f"{out_prefix}.ratio_scatter.{args.format}", fmt=args.format, dpi=args.dpi)
         plt.close(fig3)
 
-    for liftover_path, suffix in resolve_inputs():
+    for liftover_path, suffix in resolve_liftover_inputs(args.liftover, args.liftover_prefix):
         run_one(liftover_path, args.out_prefix + suffix)
 
 if __name__ == "__main__":

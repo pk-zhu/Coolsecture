@@ -31,7 +31,6 @@ def _ensure_fai(fasta_path: str) -> str:
         seq_offset = 0
         line_bases = 0
         line_width = 0
-        pos = 0
         while True:
             line = f.readline()
             if not line:
@@ -51,7 +50,6 @@ def _ensure_fai(fasta_path: str) -> str:
                     line_bases = len(line.rstrip(b"\r\n"))
                     line_width = len(line)
                 length += len(line.rstrip(b"\r\n"))
-            pos = f.tell()
     return fai_path
 
 def _matrix_uri(path: str, res: int) -> str:

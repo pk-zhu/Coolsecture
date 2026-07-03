@@ -1,5 +1,4 @@
 import argparse, sys
-from textwrap import dedent
 
 def _call(modname):
     mod = __import__(f"coolsecture.{modname}", fromlist=["main"])
