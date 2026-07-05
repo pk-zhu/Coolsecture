@@ -114,7 +114,287 @@ def _is_rich(path: str) -> bool:
     return False
 
 
-def read_contacts_rich(contacts_path: str) -> Tuple[Dict, Dict]:
+# ---- Packed contact hash ---------------------------------------------------
+#
+# CB (the B-side contact hash) is by far the largest data structure in
+# liftcontacts. As a plain ``dict`` with 4-tuple int keys and 6-tuple values it
+# costs ~400-500 bytes per entry, so a 200M-row file eats ~85GB of RSS *before*
+# any shard work starts. Under a 16-way fork Pool that's fatal.
+#
+# ``PackedContactHash`` stores the same information in two sorted numpy arrays:
+#
+#     keys  int64[N]   packed as ((N1 & 0xFF) << 56) | ((b1 & 0xFFFFFF) << 32)
+#                                | ((N2 & 0xFF) << 24) | (b2 & 0xFFFFFF)
+#     vals  struct[N]  (rank i8, strict i8, weak i8, cov1 f8, cov2 f8, dist f8)
+#
+# That's 8 + 48 = 56 bytes per entry, ~7-9x less RSS than the equivalent dict.
+# Just as important, numpy arrays fork with true copy-on-write across worker
+# processes because they are C-owned buffers -- accessing them does NOT bump a
+# Python refcount, so pages stay shared indefinitely.
+#
+# The class exposes exactly the dict operations _iDifferContact_core uses:
+# ``k in cb`` and ``cb[k]``. Both delegate to a single ``np.searchsorted`` call
+# and are O(log N). Empirically the log-N constant is smaller than the object
+# overhead we're avoiding, so the hot loop stays fast.
+
+_CHROM_BITS = 8
+_BIN_BITS = 24
+_CHROM_MASK = (1 << _CHROM_BITS) - 1
+_BIN_MASK = (1 << _BIN_BITS) - 1
+_SIDE_BITS = _CHROM_BITS + _BIN_BITS   # 32
+_SIDE_MASK = (1 << _SIDE_BITS) - 1
+
+
+def _pack_key_arrays(N1, b1, N2, b2):
+    """Pack (N1, b1, N2, b2) numpy arrays into a single int64 array.
+
+    Requires N < 2^8 and b < 2^24 -- fine for anything up to ~16M bins per side
+    of the join, which covers hg38 at 10bp resolution.
+    """
+    if (N1.max() > _CHROM_MASK or N2.max() > _CHROM_MASK
+            or b1.max() > _BIN_MASK or b2.max() > _BIN_MASK):
+        raise ValueError(
+            f"PackedContactHash: value exceeds {_CHROM_BITS}-bit chrom / "
+            f"{_BIN_BITS}-bit bin budget"
+        )
+    N1_64 = N1.astype(np.int64, copy=False)
+    N2_64 = N2.astype(np.int64, copy=False)
+    b1_64 = b1.astype(np.int64, copy=False)
+    b2_64 = b2.astype(np.int64, copy=False)
+    return (
+        (N1_64 << (_BIN_BITS + _SIDE_BITS))
+        | (b1_64 << _SIDE_BITS)
+        | (N2_64 << _BIN_BITS)
+        | b2_64
+    )
+
+
+def _pack_key_scalar(N1, b1, N2, b2):
+    """Pack a single (N1, b1, N2, b2) tuple to int64. Cheap, ~200ns."""
+    return (
+        (N1 << (_BIN_BITS + _SIDE_BITS))
+        | (b1 << _SIDE_BITS)
+        | (N2 << _BIN_BITS)
+        | b2
+    )
+
+
+def _unpack_key_scalar(k):
+    """Reverse of _pack_key_scalar."""
+    b2 = k & _BIN_MASK
+    N2 = (k >> _BIN_BITS) & _CHROM_MASK
+    b1 = (k >> _SIDE_BITS) & _BIN_MASK
+    N1 = (k >> (_BIN_BITS + _SIDE_BITS)) & _CHROM_MASK
+    return int(N1), int(b1), int(N2), int(b2)
+
+
+# Structured dtype for the value payload -- fixed 48 bytes / entry, and stored
+# contiguously so 16 fork workers COW-share one physical buffer.
+_VAL_DTYPE = np.dtype([
+    ("rank", np.int64),
+    ("strict", np.int64),
+    ("weak", np.int64),
+    ("cov1", np.float64),
+    ("cov2", np.float64),
+    ("dist_bins", np.float64),
+])
+
+
+class PackedContactHash:
+    """Dict-like view backed by sorted numpy int64 keys + struct-array values.
+
+    Supports ``k in self``, ``self[k]``, ``len(self)``. Keys are 4-tuples of
+    Python ints matching the original CB layout; values are 6-tuples matching
+    the original CB payload (rank, strict, weak, cov1, cov2, dist_bins).
+    """
+
+    __slots__ = ("_keys", "_vals")
+
+    def __init__(self, keys_arr: "np.ndarray", vals_arr: "np.ndarray"):
+        # keys_arr and vals_arr must be pre-sorted-by-key with no duplicates.
+        # We trust callers to have done that in bulk.
+        self._keys = keys_arr
+        self._vals = vals_arr
+
+    def __len__(self) -> int:
+        return int(self._keys.shape[0])
+
+    def __contains__(self, k) -> bool:
+        if isinstance(k, tuple):
+            if len(k) != 4:
+                return False
+            packed = _pack_key_scalar(k[0], k[1], k[2], k[3])
+        else:
+            packed = int(k)
+        idx = np.searchsorted(self._keys, packed)
+        return idx < self._keys.shape[0] and self._keys[idx] == packed
+
+    def __getitem__(self, k):
+        if isinstance(k, tuple):
+            if len(k) != 4:
+                raise KeyError(k)
+            packed = _pack_key_scalar(k[0], k[1], k[2], k[3])
+        else:
+            packed = int(k)
+        idx = np.searchsorted(self._keys, packed)
+        if idx >= self._keys.shape[0] or self._keys[idx] != packed:
+            raise KeyError(k)
+        row = self._vals[idx]
+        # Return a plain tuple so consumers doing ``dc = iDuplicateContact(CB[k], ...)``
+        # keep working -- iDuplicateContact indexes v[0..5].
+        return (
+            int(row["rank"]), int(row["strict"]), int(row["weak"]),
+            float(row["cov1"]), float(row["cov2"]), float(row["dist_bins"]),
+        )
+
+
+def _build_packed_hash_from_chunks(key_chunks, val_chunks) -> PackedContactHash:
+    """Concatenate per-chunk numpy arrays, dedup, sort, and wrap.
+
+    Later chunks overwrite earlier ones, matching read_contacts_rich's dedup
+    semantics. We reverse the chunk order before np.unique so that the "keep
+    first" behaviour of return_index=True effectively picks the LATEST row for
+    each key.
+    """
+    if not key_chunks:
+        return PackedContactHash(
+            np.empty(0, dtype=np.int64),
+            np.empty(0, dtype=_VAL_DTYPE),
+        )
+    # Concatenate in reverse so that later-file rows come first; unique then
+    # picks those over any earlier duplicates.
+    all_keys = np.concatenate(list(reversed(key_chunks)))
+    all_vals = np.concatenate(list(reversed(val_chunks)))
+    # Dedup preserving first (== latest file position) occurrence.
+    _, first_idx = np.unique(all_keys, return_index=True)
+    dedup_keys = all_keys[first_idx]
+    dedup_vals = all_vals[first_idx]
+    # first_idx already yields keys in sorted order (np.unique returns sorted
+    # unique values); vals aligned by fancy index. No extra sort needed.
+    return PackedContactHash(dedup_keys, dedup_vals)
+
+
+def read_contact_hash_rich_packed(contacts_path: str, ChrIdxs: Dict) -> Tuple[PackedContactHash, Dict]:
+    """Same as ``read_contact_hash_rich`` but returns a PackedContactHash.
+
+    Memory footprint is ~7-9x lower than the dict variant for large files,
+    which is critical for the B-side (~500M-row) inputs used by
+    ``liftcontracts`` on human-genome pairs. Semantics are identical: the
+    returned object supports ``k in cb`` and ``cb[k]`` with 4-tuple keys and
+    6-tuple values matching the legacy layout.
+    """
+    import pandas as pd
+    logger.info(f"Reading rich contacts (packed, chunked): {contacts_path}")
+    dtype = {
+        "chrom1": "category", "start1": np.int64, "end1": np.int64, "bin1": np.int64,
+        "chrom2": "category", "start2": np.int64, "end2": np.int64, "bin2": np.int64,
+        "rank": np.int64, "strict": np.int64, "weak": np.int64,
+        "cov1": np.float64, "cov2": np.float64, "dist_bins": np.float64,
+    }
+    CHUNK = 5_000_000
+
+    bins: Dict = {}
+    idx_lookup: Dict = {}
+    key_chunks: List = []
+    val_chunks: List = []
+    total_rows = 0
+
+    reader = pd.read_csv(
+        contacts_path,
+        sep="\t",
+        header=0,
+        dtype=dtype,
+        engine="c",
+        na_filter=False,
+        chunksize=CHUNK,
+    )
+    for chunk_i, df in enumerate(reader):
+        if _shutdown_requested:
+            raise KeyboardInterrupt("Shutdown requested")
+        n = len(df)
+        total_rows += n
+
+        chrom1 = df["chrom1"].to_numpy()
+        chrom2 = df["chrom2"].to_numpy()
+        bin1 = df["bin1"].to_numpy()
+        bin2 = df["bin2"].to_numpy()
+        start1 = df["start1"].to_numpy()
+        end1 = df["end1"].to_numpy()
+        start2 = df["start2"].to_numpy()
+        end2 = df["end2"].to_numpy()
+        rank_a = df["rank"].to_numpy()
+        strict_a = df["strict"].to_numpy()
+        weak_a = df["weak"].to_numpy()
+        cov1 = df["cov1"].to_numpy()
+        cov2 = df["cov2"].to_numpy()
+        dist_bins = df["dist_bins"].to_numpy()
+        del df
+
+        for c in np.unique(np.concatenate([chrom1, chrom2])).tolist():
+            if c not in idx_lookup:
+                idx_lookup[c] = ChrIdxs[c]
+
+        for bin_arr, chrom_arr, start_arr, end_arr in (
+            (bin1, chrom1, start1, end1),
+            (bin2, chrom2, start2, end2),
+        ):
+            _, first_idx = np.unique(bin_arr, return_index=True)
+            for b, c, s, e in zip(
+                bin_arr[first_idx].tolist(),
+                chrom_arr[first_idx].tolist(),
+                start_arr[first_idx].tolist(),
+                end_arr[first_idx].tolist(),
+            ):
+                if b not in bins:
+                    bins[b] = (c, s, e)
+
+        N1 = np.fromiter((idx_lookup[c] for c in chrom1.tolist()), dtype=np.int64, count=n)
+        N2 = np.fromiter((idx_lookup[c] for c in chrom2.tolist()), dtype=np.int64, count=n)
+        del chrom1, chrom2
+
+        swap = (N2 < N1) | ((N2 == N1) & (bin2 < bin1))
+        if swap.any():
+            N1, N2 = np.where(swap, N2, N1), np.where(swap, N1, N2)
+            bin1, bin2 = np.where(swap, bin2, bin1), np.where(swap, bin1, bin2)
+            cov1, cov2 = np.where(swap, cov2, cov1), np.where(swap, cov1, cov2)
+        del swap, start1, end1, start2, end2
+
+        # Pack keys into int64 (no Python objects, just a numpy array).
+        packed_keys = _pack_key_arrays(N1, bin1, N2, bin2)
+        del N1, N2, bin1, bin2
+
+        # Assemble the value struct-array.
+        packed_vals = np.empty(n, dtype=_VAL_DTYPE)
+        packed_vals["rank"] = rank_a
+        packed_vals["strict"] = strict_a
+        packed_vals["weak"] = weak_a
+        packed_vals["cov1"] = cov1
+        packed_vals["cov2"] = cov2
+        packed_vals["dist_bins"] = dist_bins
+        del rank_a, strict_a, weak_a, cov1, cov2, dist_bins
+
+        key_chunks.append(packed_keys)
+        val_chunks.append(packed_vals)
+
+        if ((chunk_i + 1) % 4) == 0:
+            logger.info(
+                f"  chunk {chunk_i + 1}: total_rows={total_rows}, "
+                f"chunk_buffers={len(key_chunks)}, bins={len(bins)}"
+            )
+            gc.collect()
+
+    logger.info(f"  merging {len(key_chunks)} chunks into packed hash...")
+    packed = _build_packed_hash_from_chunks(key_chunks, val_chunks)
+    del key_chunks, val_chunks
+    gc.collect()
+    logger.info(
+        f"  built packed contact hash: {len(packed)} unique keys, {len(bins)} bins "
+        f"(from {total_rows} rows, ~{len(packed) * 56 / (1024**3):.2f} GB)"
+    )
+    return packed, bins
+
+
+
     """
     Read RICH format contacts.
 
@@ -174,94 +454,128 @@ def read_contact_hash_rich(contacts_path: str, ChrIdxs: Dict) -> Tuple[Dict, Dic
     which was a Python-level per-row loop that grew super-linearly (~17x slowdown
     at 60M rows) due to nested-tuple keys and dict-rehash costs. Here we lean on the
     pandas C parser for tokenization + numpy for the canonical-order swap and key
-    packing, then materialize the two dicts in one pass. Semantics are identical.
+    packing.
+
+    Memory-conscious streaming: pandas ``chunksize`` reads a bounded slice at a
+    time, we materialise per-chunk numpy views + Python lists just long enough to
+    fold them into the running ``out``/``bins`` dicts, then release. Peak
+    additional RSS is roughly ``chunk_rows * (~200 bytes)`` on top of the final
+    dict, instead of loading the whole DataFrame plus 14 parallel .tolist() lists
+    in memory simultaneously.
     """
     import pandas as pd
-    logger.info(f"Reading rich contacts (fast path): {contacts_path}")
+    logger.info(f"Reading rich contacts (fast path, chunked): {contacts_path}")
     dtype = {
         "chrom1": "category", "start1": np.int64, "end1": np.int64, "bin1": np.int64,
         "chrom2": "category", "start2": np.int64, "end2": np.int64, "bin2": np.int64,
         "rank": np.int64, "strict": np.int64, "weak": np.int64,
         "cov1": np.float64, "cov2": np.float64, "dist_bins": np.float64,
     }
-    df = pd.read_csv(
+    # 5M rows/chunk keeps per-chunk numpy arrays around ~500MB total.
+    CHUNK = 5_000_000
+
+    out: Dict = {}
+    bins: Dict = {}
+    idx_lookup: Dict = {}
+    total_rows = 0
+
+    reader = pd.read_csv(
         contacts_path,
         sep="\t",
         header=0,
         dtype=dtype,
         engine="c",
         na_filter=False,
+        chunksize=CHUNK,
     )
-    if _shutdown_requested:
-        raise KeyboardInterrupt("Shutdown requested")
-    n_rows = len(df)
-    logger.info(f"  parsed {n_rows} rows; materializing bins and keys...")
+    for chunk_i, df in enumerate(reader):
+        if _shutdown_requested:
+            raise KeyboardInterrupt("Shutdown requested")
+        n = len(df)
+        total_rows += n
 
-    chrom1 = df["chrom1"].to_numpy()  # object array of strings (from category)
-    chrom2 = df["chrom2"].to_numpy()
-    bin1 = df["bin1"].to_numpy()
-    bin2 = df["bin2"].to_numpy()
-    start1 = df["start1"].to_numpy()
-    end1 = df["end1"].to_numpy()
-    start2 = df["start2"].to_numpy()
-    end2 = df["end2"].to_numpy()
-    rank = df["rank"].to_numpy()
-    strict = df["strict"].to_numpy()
-    weak = df["weak"].to_numpy()
-    cov1 = df["cov1"].to_numpy()
-    cov2 = df["cov2"].to_numpy()
-    dist_bins = df["dist_bins"].to_numpy()
-    del df
-    gc.collect()
+        # Pull columns out of the DataFrame into numpy arrays. The .to_numpy()
+        # calls copy, but the DataFrame + its own buffers get released as soon as
+        # ``del df`` runs at the end of the loop, so the extra footprint is
+        # transient.
+        chrom1 = df["chrom1"].to_numpy()
+        chrom2 = df["chrom2"].to_numpy()
+        bin1 = df["bin1"].to_numpy()
+        bin2 = df["bin2"].to_numpy()
+        start1 = df["start1"].to_numpy()
+        end1 = df["end1"].to_numpy()
+        start2 = df["start2"].to_numpy()
+        end2 = df["end2"].to_numpy()
+        rank = df["rank"].to_numpy()
+        strict = df["strict"].to_numpy()
+        weak = df["weak"].to_numpy()
+        cov1 = df["cov1"].to_numpy()
+        cov2 = df["cov2"].to_numpy()
+        dist_bins = df["dist_bins"].to_numpy()
+        del df
 
-    # Bins are globally unique across chromosomes in the RICH format, so per-side
-    # dedup is enough. Build the bin dict via numpy unique which is O(n log n) and
-    # entirely C-level.
-    def _side_bins(bin_arr, chrom_arr, start_arr, end_arr):
-        _, first_idx = np.unique(bin_arr, return_index=True)
-        return dict(zip(
-            bin_arr[first_idx].tolist(),
-            zip(
-                chrom_arr[first_idx].tolist(),
-                start_arr[first_idx].tolist(),
-                end_arr[first_idx].tolist(),
-            ),
-        ))
-    bins: Dict = {}
-    bins.update(_side_bins(bin1, chrom1, start1, end1))
-    bins.update(_side_bins(bin2, chrom2, start2, end2))
-    if _shutdown_requested:
-        raise KeyboardInterrupt("Shutdown requested")
+        # Grow chrom -> N lookup only when we see a new chromosome.
+        for c in np.unique(np.concatenate([chrom1, chrom2])).tolist():
+            if c not in idx_lookup:
+                idx_lookup[c] = ChrIdxs[c]
 
-    # Map chrom -> N via vectorized lookup. pd.Categorical would work too, but a
-    # numpy fancy index over an aligned array keeps us dependency-lean.
-    unique_chroms = np.unique(np.concatenate([chrom1, chrom2]))
-    # ChrIdxs may not cover every chromosome; keep only known ones (unknown rows
-    # would fail downstream anyway, so we let the KeyError propagate).
-    idx_lookup = {c: ChrIdxs[c] for c in unique_chroms.tolist()}
-    N1 = np.fromiter((idx_lookup[c] for c in chrom1.tolist()), dtype=np.int64, count=n_rows)
-    N2 = np.fromiter((idx_lookup[c] for c in chrom2.tolist()), dtype=np.int64, count=n_rows)
-    del chrom1, chrom2, unique_chroms
+        # Bins are globally unique across chromosomes; dedup within the chunk via
+        # numpy.unique then merge with running dict (setdefault preserves earliest
+        # (chrom,start,end), which matches legacy behaviour).
+        for bin_arr, chrom_arr, start_arr, end_arr in (
+            (bin1, chrom1, start1, end1),
+            (bin2, chrom2, start2, end2),
+        ):
+            _, first_idx = np.unique(bin_arr, return_index=True)
+            bin_list = bin_arr[first_idx].tolist()
+            chrom_list = chrom_arr[first_idx].tolist()
+            start_list = start_arr[first_idx].tolist()
+            end_list = end_arr[first_idx].tolist()
+            for b, c, s, e in zip(bin_list, chrom_list, start_list, end_list):
+                if b not in bins:
+                    bins[b] = (c, s, e)
+            del bin_list, chrom_list, start_list, end_list
 
-    # Canonical order: (N1, b1) <= (N2, b2). Vectorized swap.
-    swap = (N2 < N1) | ((N2 == N1) & (bin2 < bin1))
-    if swap.any():
-        N1, N2 = np.where(swap, N2, N1), np.where(swap, N1, N2)
-        bin1, bin2 = np.where(swap, bin2, bin1), np.where(swap, bin1, bin2)
-        cov1, cov2 = np.where(swap, cov2, cov1), np.where(swap, cov1, cov2)
-    del swap
+        # Map chrom -> N. np.fromiter avoids allocating an intermediate list.
+        N1 = np.fromiter((idx_lookup[c] for c in chrom1.tolist()), dtype=np.int64, count=n)
+        N2 = np.fromiter((idx_lookup[c] for c in chrom2.tolist()), dtype=np.int64, count=n)
+        del chrom1, chrom2
 
-    # Build the output dict in one C-level zip. Keys are 4-tuples of native ints
-    # (cheap to hash); values are 6-tuples matching the legacy layout. Later rows
-    # overwrite earlier rows, preserving read_contacts_rich's dedup semantics.
-    keys = zip(N1.tolist(), bin1.tolist(), N2.tolist(), bin2.tolist())
-    vals = zip(
-        rank.tolist(), strict.tolist(), weak.tolist(),
-        cov1.tolist(), cov2.tolist(), dist_bins.tolist(),
+        # Canonical order: (N1, b1) <= (N2, b2). Vectorized in-place swap avoids
+        # allocating six extra full-size arrays.
+        swap = (N2 < N1) | ((N2 == N1) & (bin2 < bin1))
+        if swap.any():
+            # np.where allocates, but each result is one chunk not the whole file.
+            N1, N2 = np.where(swap, N2, N1), np.where(swap, N1, N2)
+            bin1, bin2 = np.where(swap, bin2, bin1), np.where(swap, bin1, bin2)
+            cov1, cov2 = np.where(swap, cov2, cov1), np.where(swap, cov1, cov2)
+        del swap
+
+        # Fold this chunk into the running dict. Later rows overwrite earlier ones,
+        # preserving read_contacts_rich's dedup semantics across the whole file
+        # (chunks are read in file order).
+        keys = zip(N1.tolist(), bin1.tolist(), N2.tolist(), bin2.tolist())
+        vals = zip(
+            rank.tolist(), strict.tolist(), weak.tolist(),
+            cov1.tolist(), cov2.tolist(), dist_bins.tolist(),
+        )
+        out.update(zip(keys, vals))
+
+        del N1, N2, bin1, bin2, start1, end1, start2, end2
+        del rank, strict, weak, cov1, cov2, dist_bins
+        del keys, vals
+
+        if ((chunk_i + 1) % 4) == 0:
+            logger.info(
+                f"  chunk {chunk_i + 1}: total_rows={total_rows}, "
+                f"unique_keys={len(out)}, bins={len(bins)}"
+            )
+            gc.collect()
+
+    logger.info(
+        f"  built contact hash: {len(out)} unique keys, {len(bins)} bins "
+        f"(from {total_rows} rows)"
     )
-    out: Dict = dict(zip(keys, vals))
-
-    logger.info(f"  built contact hash: {len(out)} unique keys, {len(bins)} bins")
     return out, bins
 
 
@@ -661,11 +975,22 @@ def _calculate_optimal_threads(
     
     try:
         mem_limit = _get_memory_limit()
-        
-        est_per_thread = (
-            len(Contact_disp_1) * 500 +
-            len(ObjCoorMP) * 2000
-        )
+
+        # Per-entry cost depends on the CB representation. PackedContactHash
+        # stores 8+48 = 56 bytes per key in numpy arrays that fork COW-share
+        # across all workers, so it does NOT scale with thread count; only the
+        # per-worker CA shard + output overhead does. A plain dict CB costs
+        # ~500 bytes per entry and duplicates under fork after refcount bumps.
+        if isinstance(Contact_disp_1, PackedContactHash):
+            # CB is shared read-only via COW numpy arrays; per-thread cost is
+            # dominated by ObjCoorMP (which is still a dict) and the per-shard
+            # CA copy. Rough bookkeeping accounts for that.
+            est_per_thread = len(ObjCoorMP) * 2000
+        else:
+            est_per_thread = (
+                len(Contact_disp_1) * 500 +
+                len(ObjCoorMP) * 2000
+            )
         
         max_safe_threads = max(1, int(mem_limit / max(est_per_thread, 1024 * 1024)))
         safe_nthreads = min(nthreads, max_safe_threads)
@@ -1158,7 +1483,7 @@ def run_liftover(
     if use_spill:
         with _tmp_workspace(tmp_dir) as td:
             logger.info("Reading contact-b and sharding contact-a...")
-            CB, Bbins = read_contact_hash_rich(contact_b, idxB)
+            CB, Bbins = read_contact_hash_rich_packed(contact_b, idxB)
             shard_paths, Abins = _stream_contact_hash_to_shards(
                 contact_a,
                 idxA,
@@ -1277,7 +1602,7 @@ def run_liftover(
     gc.collect()
 
     logger.info("Reading contact-b...")
-    CB, Bbins = read_contact_hash_rich(contact_b, idxB)
+    CB, Bbins = read_contact_hash_rich_packed(contact_b, idxB)
     gc.collect()
 
     A_chr_bins2, A_chr_starts, A_chr_ends = _build_chr_arrays(Abins, idxA)
