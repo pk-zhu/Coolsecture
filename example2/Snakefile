@@ -73,11 +73,13 @@ def split_cli_args(params: str):
 def coolsecture_env():
     env = os.environ.copy()
     src = str(SRC_DIR)
-    # Add conda site-packages where hic2cool is installed
-    conda_site_packages = "/opt/anaconda3/lib/python3.12/site-packages"
+    # NOTE: previously injected /opt/anaconda3/lib/python3.12/site-packages here
+    # so hic2cool could be found during prepare_sample. That path pulls in a
+    # conda-compiled matplotlib whose C extensions were built against NumPy 1.x
+    # and now crash under the system's NumPy 2.x. If you need to run
+    # prepare_sample from .hic, install hic2cool into the same Python that
+    # runs snakemake (e.g. `pip install --user hic2cool`) instead.
     pythonpath = src
-    if conda_site_packages:
-        pythonpath += os.pathsep + conda_site_packages
     if env.get("PYTHONPATH"):
         pythonpath += os.pathsep + env["PYTHONPATH"]
     env["PYTHONPATH"] = pythonpath
@@ -512,7 +514,7 @@ if RES_LIST:
     rule cross_validate:
         input:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
-            ctl="step3/{a}_{b}.r{res}.Target.cool"
+            tgt="step3/{a}_{b}.r{res}.Target.cool"
         output:
             scc_tsv="step3/{a}_vs_{b}_on_hg38.r{res}.scc.tsv",
             scc_summary="step3/{a}_vs_{b}_on_hg38.r{res}.scc.summary.tsv",
@@ -643,7 +645,7 @@ else:
     rule cross_validate:
         input:
             obs="step3/{a}_{b}.Observed.cool",
-            ctl="step3/{a}_{b}.Target.cool"
+            tgt="step3/{a}_{b}.Target.cool"
         output:
             scc_tsv="step3/{a}_vs_{b}_on_hg38.scc.tsv",
             scc_summary="step3/{a}_vs_{b}_on_hg38.scc.summary.tsv",
