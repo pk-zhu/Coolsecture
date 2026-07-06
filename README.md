@@ -1,28 +1,27 @@
 # Coolsecture
 
-Coolsecture is a Python toolkit for cross-species Hi-C contact-map comparison. It
-starts from genome assemblies, synteny mappings, and Hi-C contact matrices, then
-builds source-coordinate contact tables, performs contact liftover, summarizes
-reciprocal consistency, and generates downstream matrices and diagnostic plots.
+Coolsecture compares Hi-C contact maps across species. Given two genome
+assemblies, a synteny map between them, and a Hi-C matrix for each, it lifts
+contacts from one species' coordinate system into the other's and reports how
+well they agree.
 
-The project is inspired by and modernizes ideas from
-[C-InterSecture](https://github.com/NuriddinovMA/C-InterSecture), with a stronger
-focus on reproducible command-line workflows, cooler/mcool/hic input support,
-multi-resolution processing, disk-spill paths for larger runs, and publication
-ready summary outputs.
+It builds on [C-InterSecture](https://github.com/NuriddinovMA/C-InterSecture)
+but is rebuilt around a CLI workflow, native `.cool`/`.mcool`/`.hic` input,
+multi-resolution runs, and a disk-spill path for matrices too large to fit
+in memory.
 
 ## Changelog
 
 ### v0.3.5 - 2026-07-06
 
-- Added mummer4 aligner support in `asm2link` via `-a mummer4` (nucmer +
-  delta-filter + show-coords pipeline). Default aligner remains minimap2.
-- Added `--mummer-filter {1-to-1,mutual-best,none}` (default `1-to-1`) and
-  `--mummer-min-idy` / `--mummer-min-len` for mummer4 alignment filtering.
-- Wired `--asm-aligner` and `--asm-mummer-filter` through `run-all`.
-- Fixed misleading help text: `prepare` prog name, `liftcontacts --contact-a`
-  file extension, missing `--dups-filter` / `--model` descriptions, and
-  duplicate `(default: auto)` on several `--interactive` flags.
+- `asm2link` can now use mummer4 (`-a mummer4`; nucmer + delta-filter +
+  show-coords) in addition to minimap2. minimap2 stays the default.
+- New `--mummer-filter {1-to-1,mutual-best,none}` (default `1-to-1`) and
+  `--mummer-min-idy` / `--mummer-min-len` for filtering mummer4 alignments.
+- `run-all` gained `--asm-aligner` and `--asm-mummer-filter` to forward.
+- Help text fixes: `prepare` prog name, `liftcontacts --contact-a` extension,
+  missing descriptions for `--dups-filter` / `--model`, duplicated
+  `(default: auto)` on several `--interactive` flags.
 
 ### v0.3.2 - 2026-06-14
 
@@ -34,20 +33,20 @@ ready summary outputs.
 
 ## Main Features
 
-- Convert assemblies to syntenic links with `minimap2` or `mummer4`.
-- Convert `.link` or UCSC `.chain` files to Coolsecture `.mark` maps.
-- Convert `.cool`, `.mcool`, or `.hic` matrices to percentile-ranked contact
-  tables.
-- Lift contacts in both directions and report reciprocal consistency metrics.
-- Generate observed/target `.cool` or `.hic` matrices from lifted contacts.
-- Compute PBAD-style metrics, contact-stat plots, split-triangle cross plots, and
-  HiCRep-style SCC similarity.
-- Run either command-by-command, through `run-all`, or through the example
-  Snakemake workflows.
+- Align assemblies into syntenic links with `minimap2` or `mummer4`.
+- Convert `.link` or UCSC `.chain` into Coolsecture's `.mark` synteny format.
+- Turn `.cool` / `.mcool` / `.hic` matrices into distance-stratified
+  percentile-ranked contact tables.
+- Lift contacts A→B and B→A, then summarize reciprocal consistency.
+- Reconstruct observed/target `.cool` or `.hic` matrices from lifted contacts.
+- PBAD and related metrics, diagnostic plots, split-triangle cross plots,
+  HiCRep-style SCC.
+- Run command-by-command, through `run-all`, or via the example Snakemake
+  workflows.
 
 ## Installation
 
-Coolsecture requires Python 3.8 or newer.
+Needs Python 3.8+.
 
 ```bash
 git clone https://github.com/pk-zhu/Coolsecture.git
@@ -55,7 +54,7 @@ cd Coolsecture
 python -m pip install -e .
 ```
 
-Optional extras:
+Optional extras (`.hic` reading, Plotly HTML, SCC stats):
 
 ```bash
 python -m pip install -e ".[hic]"
@@ -65,14 +64,13 @@ python -m pip install -e ".[stats]"
 
 External tools:
 
-- `minimap2` is required by `asm2link` and `run-all` (default aligner).
-- `mummer4` (`nucmer`, `delta-filter`, `show-coords`) is optional; needed only
-  when `asm2link -a mummer4` or `run-all --asm-aligner mummer4` is used.
-- `samtools` is optional; `run-all` can create simple `.fai` files itself if
-  `samtools faidx` is unavailable.
-- `juicer_tools` is required only when `lift2matrix --format hic` or
-  `--format both` is used.
-- `snakemake` is required only for the example workflow directories.
+- `minimap2` — used by `asm2link` and `run-all` (default aligner).
+- `mummer4` (`nucmer`, `delta-filter`, `show-coords`) — only if you pass
+  `-a mummer4` / `--asm-aligner mummer4`.
+- `samtools` — optional; `run-all` can write a minimal `.fai` itself if
+  `samtools faidx` is missing.
+- `juicer_tools` — only for `lift2matrix --format hic` or `--format both`.
+- `snakemake` — only for the example workflows.
 
 ## Command Overview
 
@@ -103,29 +101,26 @@ Note: in the current CLI, FASTA index arguments are named `--fadix`,
 
 ## Inputs
 
-Typical inputs are:
+You need:
 
-- Genome FASTA files for species A and species B.
-- FASTA index files (`.fai`) for each genome.
-- Hi-C matrices in `.cool`, `.mcool`, or `.hic` format.
-- A synteny file, either a six-column `.link` file or a UCSC `.chain` file.
+- A FASTA and `.fai` for each species (A and B).
+- A Hi-C matrix for each, in `.cool`, `.mcool`, or `.hic`.
+- A synteny file: a six-column `.link` (from `asm2link`) or a UCSC `.chain`.
 
-Six-column `.link` format:
+`.link` format (0-based half-open, same as PAF):
 
 ```text
 chromA  startA  endA  chromB  startB  endB
 ```
 
-Coolsecture accepts normalized cooler files. For `.cool` and `.mcool`, the bins
-table should contain at least one normalization vector among `KR`, `VC_SQRT`,
-`VC`, or `weight`.
+For `.cool` / `.mcool`, the bins table must carry at least one normalization
+vector among `KR`, `VC_SQRT`, `VC`, or `weight`.
 
 ## Quick Start: End-to-End
 
-Use `run-all` when you have both genome FASTA files and both contact matrices.
-This command runs assembly alignment, mark generation, contact preparation,
-bidirectional liftover, contact statistics, metrics, and matrix reconstruction.
-It does not run `plot-cross`.
+`run-all` chains the full pipeline — alignment, mark generation, contact
+preparation, bidirectional liftover, statistics, metrics, and matrix
+reconstruction. It does not run `plot-cross`.
 
 ```bash
 coolsecture run-all \
@@ -176,7 +171,7 @@ coolsecture run-all \
 
 ### 1. Build a link file from assemblies
 
-Using minimap2 (default):
+minimap2 (default):
 
 ```bash
 coolsecture asm2link \
@@ -186,8 +181,8 @@ coolsecture asm2link \
   --out-prefix step0/Asu_Ath
 ```
 
-Using mummer4 (more precise for divergent assemblies; produces 1-to-1
-syntenic alignments by default):
+mummer4 (more precise on divergent assemblies; emits 1-to-1 syntenic
+alignments by default):
 
 ```bash
 coolsecture asm2link \
@@ -198,20 +193,20 @@ coolsecture asm2link \
   --out-prefix step0/Asu_Ath
 ```
 
-Outputs (minimap2 path):
+minimap2 produces:
 
 - `step0/Asu_Ath.paf`
 - `step0/Asu_Ath.link`
 
-Outputs (mummer4 path):
+mummer4 produces:
 
-- `step0/Asu_Ath.delta` (raw nucmer output)
-- `step0/Asu_Ath.filter.delta` (filtered; omitted when `--mummer-filter none`)
-- `step0/Asu_Ath.coords.tsv` (show-coords tabular output)
+- `step0/Asu_Ath.delta` — raw nucmer output
+- `step0/Asu_Ath.filter.delta` — after `delta-filter` (skipped when
+  `--mummer-filter none`)
+- `step0/Asu_Ath.coords.tsv` — `show-coords -T -H` tabular output
 - `step0/Asu_Ath.link`
 
-If you already have a UCSC `.chain` file, skip this step and pass it directly to
-`link2mark`.
+If you already have a UCSC `.chain`, skip this step and feed it to `link2mark`.
 
 ### 2. Convert synteny to a mark file
 
@@ -407,65 +402,37 @@ coolsecture plot-cross \
 
 ## Snakemake Examples
 
-The repository includes two workflow templates:
+Two workflow templates ship with the repo:
 
-- `example1/`: plant example using `.mcool` matrices and a `.link` file.
-- `example2/`: mammalian example using `.hic` matrices and a UCSC `.chain` file.
+- `example1/` — plant example, `.mcool` + `.link`.
+- `example2/` — mammalian example, `.hic` + UCSC `.chain`.
 
-Each example is configured through `config.yaml` and run with:
+Each is driven by `config.yaml`:
 
 ```bash
 cd example1
-snakemake -n -s Snakefile --cores 1
+snakemake -n -s Snakefile --cores 1   # dry-run
 snakemake -s Snakefile --cores 8
 ```
 
-Before running, edit `config.yaml` so that the matrix, synteny, and `.fai` paths
-point to files available on your machine. Large Hi-C matrices and generated
-`step1/`, `step2/`, and `step3/` outputs are not intended to be committed to the
-Git repository.
+Edit `config.yaml` so the matrix, synteny, and `.fai` paths point at files on
+your machine. Don't commit large matrices or generated `step1..3/` outputs —
+see `.gitignore`.
 
 ## Interactive Outputs
 
-Several commands support optional Plotly HTML summaries:
+A few commands can emit Plotly HTML alongside the static plots:
 
 - `prepare --summary --interactive auto|on|off`
 - `liftcontracts --interactive auto|on|off`
 - `multiscale --interactive auto|on|off`
 
-Install Plotly with:
-
 ```bash
 python -m pip install -e ".[viz]"
 ```
 
-The Snakemake examples are designed around PDF outputs and may remove Plotly HTML
-artifacts to keep workflow outputs predictable.
-
-## Repository Hygiene
-
-Recommended files to keep in the GitHub repository:
-
-- `src/`
-- `pyproject.toml`
-- `README.md`
-- `LICENSE`
-- lightweight example `Snakefile` and `config.yaml` files
-- small synthetic or metadata-only example inputs, if needed
-
-Recommended files to exclude from Git:
-
-- `.snakemake/`
-- `.codex_tmp/`
-- `__pycache__/`
-- `src/*.egg-info/`
-- `step0/`, `step1/`, `step2/`, `step3/`
-- large `.hic`, `.cool`, `.mcool`, `.tsv`, `.bedGraph`, and generated figure files
-- local backup or benchmark directories such as `bak/`
-
-For reproducible public releases, put large data on Zenodo, Figshare, SRA/GEO, or
-another data repository, then link to it from this README or from a separate data
-availability document.
+The Snakemake examples target PDF outputs and may delete Plotly HTML to keep
+workflow outputs predictable.
 
 ## Citation
 
