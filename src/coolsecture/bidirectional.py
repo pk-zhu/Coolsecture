@@ -566,8 +566,8 @@ def main():
         description="Run A->B and B->A liftover, always emit merged liftover, and compute reciprocal metrics",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--contact-a", help="A: .contacts.rich.tsv")
-    p.add_argument("--contact-b", help="B: .contacts.rich.tsv")
+    p.add_argument("--contact-a", help="A: .contacts.tsv")
+    p.add_argument("--contact-b", help="B: .contacts.tsv")
     p.add_argument("--matrix-a-prefix", help="Batch mode: prefix for A multi-resolution .contacts.tsv")
     p.add_argument("--matrix-b-prefix", help="Batch mode: prefix for B multi-resolution .contacts.tsv")
     p.add_argument("--fadix-a", required=True, help="FASTA index (.fai) for A")
@@ -575,8 +575,10 @@ def main():
     p.add_argument("--mark-ab", required=True, help="A->B .mark")
     p.add_argument("--mark-ba", help="B->A .mark (optional; if not provided, invert mark-ab)")
     p.add_argument("--agg-frame", type=int, default=150000, help="Aggregation frame on B (bp)")
-    p.add_argument("--dups-filter", choices=['length','coverage','deviation','none','default'], default='default')
-    p.add_argument("--model", choices=['balanced','raw'], default='raw')
+    p.add_argument("--dups-filter", choices=['length','coverage','deviation','none','default'], default='default',
+        help="Duplicate contact selection rule: length (longest alignment), coverage (highest coverage), deviation (lowest), none (keep all), default (rank-based)")
+    p.add_argument("--model", choices=['balanced','raw'], default='raw',
+        help="Normalization model: balanced (use cooler weights) or raw (use raw counts)")
     p.add_argument("--uncert-thr", type=float, default=0.5, help="Remapping coverage threshold for uncertainty tag")
     p.add_argument("--frame", type=int, default=8, help="Window size (bins) for PBAD summary")
     p.add_argument(
@@ -592,9 +594,9 @@ def main():
         help="In --pbad-mode auto, skip PBAD when any liftContacts file exceeds this MB (<=0 disables auto-skip)",
     )
     p.add_argument("--interactive", default="auto", choices=["auto","on","off"],
-        help="Write interactive Plotly HTML for summary/tag tables (default: auto)")
+        help="Write interactive Plotly HTML for summary/tag tables")
     p.add_argument("--no-tags", action="store_true",
-        help="Disable uncertainty tag file output (for compatibility with liftcontacts)")
+        help="Disable uncertainty tag file output")
     # Deprecated compatibility flag: merged output is always generated.
     p.add_argument("--write-merged", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--nthreads", type=int, default=1, help="Threads for contact-diff computation (run_liftover)")

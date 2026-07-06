@@ -124,6 +124,8 @@ def main():
     p.add_argument("--name-a", default="A", help="Label for species A")
     p.add_argument("--name-b", default="B", help="Label for species B")
     p.add_argument("--asm-preset", default="asm10", choices=["asm5","asm10","asm20"], help="minimap2 preset for asm2link")
+    p.add_argument("--asm-aligner", default="minimap2", choices=["minimap2","mummer4"], help="Aligner for asm2link")
+    p.add_argument("--asm-mummer-filter", default="1-to-1", choices=["1-to-1","mutual-best","none"], help="delta-filter mode (mummer4 only)")
     p.add_argument("--auto", dest="auto", action="store_true", default=True, help="Automatically choose missing parameters")
     p.add_argument("--no-auto", dest="auto", action="store_false", help="Disable automatic parameter selection")
 
@@ -167,9 +169,14 @@ def main():
     res_list = _extract_res_list(args.prepare_args)
     # 1) asm2link
     link_prefix = step0 / f"{args.name_a}_{args.name_b}"
-    _run([sys.executable, "-m", "coolsecture", "asm2link",
+    asm2link_cmd = [sys.executable, "-m", "coolsecture", "asm2link",
           "--genome-a", args.genome_a, "--genome-b", args.genome_b,
-          "--out-prefix", str(link_prefix), "-x", args.asm_preset])
+          "--out-prefix", str(link_prefix), "-a", args.asm_aligner]
+    if args.asm_aligner == "minimap2":
+        asm2link_cmd += ["-x", args.asm_preset]
+    else:
+        asm2link_cmd += ["--mummer-filter", args.asm_mummer_filter]
+    _run(asm2link_cmd)
 
     # 2) link2mark
     _run([sys.executable, "-m", "coolsecture", "link2mark",

@@ -36,7 +36,7 @@ def main():
     p.add_argument("--frame", type=int, default=8, help="Half-window size in bins for PBAD")
     p.add_argument("--pbad-thr", type=float, default=0.2, help="Threshold to define divergent contacts")
     p.add_argument("--interactive", default="auto", choices=["auto","on","off"],
-        help="Write interactive Plotly HTML for summary tables (default: auto)")
+        help="Write interactive Plotly HTML for summary tables")
     p.add_argument("--out-prefix", required=True, help="Output prefix")
     args = p.parse_args()
 

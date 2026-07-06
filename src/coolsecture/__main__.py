@@ -29,7 +29,7 @@ def main():
     }
 
     cmd_desc = {
-        "asm2link":     "Run minimap2 and convert PAF to 6-column link.",
+        "asm2link":     "Align two assemblies with minimap2 or mummer4; write 6-column .link.",
         "link2mark":    "Convert syntenic links into mark file for liftover.",
         "prepare":      "Preprocessing from cool/mcool into rich contacts.",
         "roughlift":    "Fast/rough liftover for sanity checks (coarse mapping).",
@@ -46,7 +46,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="coolsecture",
-        description="Coolsecture v0.2.13",
+        description="Coolsecture v0.3.5",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=_format_epilog(cmd_desc),
     )

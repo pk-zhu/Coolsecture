@@ -19,12 +19,12 @@ CTS_DTYPE = np.dtype([
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
-        prog="prepare_vectorized",
+        prog="prepare",
         description=("Preprocess a .cool/.mcool/.hic into contact tables with percentile scores by distance bucket (vectorized, single-process)."),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ap.add_argument("--matrix", required=True, help="Path to .cool/.mcool::resolutions/RES or .hic")
-    ap.add_argument("--out-prefix", required=True, help="Output prefix (e.g., out/Asu_Ath)")
+    ap.add_argument("--out-prefix", required=True, help="Output prefix (e.g., out/Asu)")
     ap.add_argument("--chunksize", type=int, default=5000000, help="Pixels per chunk to read and process")
     ap.add_argument("--max-distance", type=int, default=10000000, help="Max genomic distance (bp) for intra contacts")
     ap.add_argument("--inter", action="store_true", help="Also keep inter-chrom contacts (bucket key = -1)")
@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
         help="Write multi-resolution summary table/plot when --resolution provides multiple values")
     ap.add_argument("--dpi", type=int, default=300, help="DPI for raster outputs")
     ap.add_argument("--interactive", default="auto", choices=["auto","on","off"],
-        help="Write interactive Plotly HTML for summary table (default: auto)")
+        help="Write interactive Plotly HTML for summary table")
     return ap.parse_args()
 
 def set_thread_env(n: int) -> None:
