@@ -13,6 +13,17 @@ ready summary outputs.
 
 ## Changelog
 
+### v0.3.5 - 2026-07-06
+
+- Added mummer4 aligner support in `asm2link` via `-a mummer4` (nucmer +
+  delta-filter + show-coords pipeline). Default aligner remains minimap2.
+- Added `--mummer-filter {1-to-1,mutual-best,none}` (default `1-to-1`) and
+  `--mummer-min-idy` / `--mummer-min-len` for mummer4 alignment filtering.
+- Wired `--asm-aligner` and `--asm-mummer-filter` through `run-all`.
+- Fixed misleading help text: `prepare` prog name, `liftcontacts --contact-a`
+  file extension, missing `--dups-filter` / `--model` descriptions, and
+  duplicate `(default: auto)` on several `--interactive` flags.
+
 ### v0.3.2 - 2026-06-14
 
 - Set publication-ready static plots to use editable PDF/SVG text with Carlito-preferred fonts.
@@ -23,7 +34,7 @@ ready summary outputs.
 
 ## Main Features
 
-- Convert assemblies to syntenic links with `minimap2`.
+- Convert assemblies to syntenic links with `minimap2` or `mummer4`.
 - Convert `.link` or UCSC `.chain` files to Coolsecture `.mark` maps.
 - Convert `.cool`, `.mcool`, or `.hic` matrices to percentile-ranked contact
   tables.
@@ -54,7 +65,9 @@ python -m pip install -e ".[stats]"
 
 External tools:
 
-- `minimap2` is required by `asm2link` and `run-all`.
+- `minimap2` is required by `asm2link` and `run-all` (default aligner).
+- `mummer4` (`nucmer`, `delta-filter`, `show-coords`) is optional; needed only
+  when `asm2link -a mummer4` or `run-all --asm-aligner mummer4` is used.
 - `samtools` is optional; `run-all` can create simple `.fai` files itself if
   `samtools faidx` is unavailable.
 - `juicer_tools` is required only when `lift2matrix --format hic` or
@@ -72,7 +85,7 @@ Available commands:
 
 | Command | Purpose |
 | --- | --- |
-| `asm2link` | Align two assemblies with minimap2 and write `.paf` plus six-column `.link`. |
+| `asm2link` | Align two assemblies with minimap2 or mummer4 and write `.paf` plus six-column `.link`. |
 | `link2mark` | Convert `.link` or UCSC `.chain` synteny files to `.mark`. |
 | `prepare` | Convert `.cool`, `.mcool`, or `.hic` to ranked contact tables. |
 | `roughlift` | Roughly lift a BED track for quick synteny QA. |
@@ -163,6 +176,8 @@ coolsecture run-all \
 
 ### 1. Build a link file from assemblies
 
+Using minimap2 (default):
+
 ```bash
 coolsecture asm2link \
   --genome-a Asu.fa \
@@ -171,9 +186,28 @@ coolsecture asm2link \
   --out-prefix step0/Asu_Ath
 ```
 
-Outputs:
+Using mummer4 (more precise for divergent assemblies; produces 1-to-1
+syntenic alignments by default):
+
+```bash
+coolsecture asm2link \
+  --genome-a Asu.fa \
+  --genome-b Ath.fa \
+  -a mummer4 \
+  --mummer-filter 1-to-1 \
+  --out-prefix step0/Asu_Ath
+```
+
+Outputs (minimap2 path):
 
 - `step0/Asu_Ath.paf`
+- `step0/Asu_Ath.link`
+
+Outputs (mummer4 path):
+
+- `step0/Asu_Ath.delta` (raw nucmer output)
+- `step0/Asu_Ath.filter.delta` (filtered; omitted when `--mummer-filter none`)
+- `step0/Asu_Ath.coords.tsv` (show-coords tabular output)
 - `step0/Asu_Ath.link`
 
 If you already have a UCSC `.chain` file, skip this step and pass it directly to
