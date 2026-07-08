@@ -214,7 +214,7 @@ def cool_files(a,b,res=None):
     ]
 
 def cv_files(a,b,res=None):
-    # Return cross-validate files for the workflow
+    # Return similarity files for the workflow
     suffix = f".r{res}" if res is not None else ""
     cv_prefix = f"step3/{a}_vs_{b}_on_hg38{suffix}"
     return [
@@ -509,9 +509,9 @@ if RES_LIST:
             ])
 
     # -----------------------
-    # step3: cross-validate (per pair, per resolution)
+    # step3: similarity (per pair, per resolution)
     # -----------------------
-    rule cross_validate:
+    rule similarity:
         input:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
             tgt="step3/{a}_{b}.r{res}.Target.cool"
@@ -523,7 +523,7 @@ if RES_LIST:
         run:
             ensure_dir("step3")
             run_coolsecture([
-                "cross-validate",
+                "similarity",
                 "--matrix-a", input.tgt,
                 "--matrix-b", input.obs,
                 "--format", "pdf",
@@ -640,9 +640,9 @@ else:
             ])
 
     # -----------------------
-    # step3: cross-validate (per pair)
+    # step3: similarity (per pair)
     # -----------------------
-    rule cross_validate:
+    rule similarity:
         input:
             obs="step3/{a}_{b}.Observed.cool",
             tgt="step3/{a}_{b}.Target.cool"
@@ -654,7 +654,7 @@ else:
         run:
             ensure_dir("step3")
             run_coolsecture([
-                "cross-validate",
+                "similarity",
                 "--matrix-a", input.tgt,
                 "--matrix-b", input.obs,
                 "--format", "pdf",
