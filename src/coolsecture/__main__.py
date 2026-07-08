@@ -25,7 +25,7 @@ def main():
         "run-all":      "run_all",
         "plot-cross":   "plot_cross",
         "multiscale":   "multiscale",
-        "cross-validate": "cross_validate",
+        "similarity":   "cross_validate",
     }
 
     cmd_desc = {
@@ -41,7 +41,7 @@ def main():
         "lift2matrix":  "Convert liftContacts to matrices (.cool or .hic).",
         "run-all":      "End-to-end pipeline (no plot-cross).",
         "multiscale":   "Multi-scale PBAD summary from multi-resolution liftover.",
-        "cross-validate": "Stratum-adjusted correlation (HiCRep-style) between matched source-coordinate matrices.",
+        "similarity":   "Stratum-adjusted correlation (HiCRep-style) between matched source-coordinate matrices.",
     }
 
     parser = argparse.ArgumentParser(

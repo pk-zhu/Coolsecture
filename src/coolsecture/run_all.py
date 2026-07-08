@@ -135,7 +135,7 @@ def main():
     p.add_argument("--contact-stat-args", default="", help="Extra args for contact-stat")
     p.add_argument("--metric-args", default="", help="Extra args for metric")
     p.add_argument("--lift2matrix-args", default="", help="Extra args for lift2matrix")
-    p.add_argument("--cross-validate-args", default="", help="Extra args for cross-validate")
+    p.add_argument("--similarity-args", default="", help="Extra args for similarity")
     p.add_argument("--plot-cross-args", default="", help="Extra args for plot-cross")
     args = p.parse_args()
     out = Path(args.out_prefix)
@@ -287,16 +287,16 @@ def main():
               "--fadix", fai_a,
               "--out-prefix", str(step3 / f"{args.name_a}_{args.name_b}")] + shlex.split(args.lift2matrix_args))
 
-    # 8) cross-validate and automatic plot-cross summaries
+    # 8) similarity and automatic plot-cross summaries
     if multi_res:
         for obs in sorted(step3.glob(f"{args.name_a}_{args.name_b}.Merged.r*.Observed.cool")):
             prefix = str(obs).rsplit(".Observed.cool", 1)[0]
             tgt = prefix + ".Target.cool"
             if os.path.exists(tgt):
-                _run([sys.executable, "-m", "coolsecture", "cross-validate",
+                _run([sys.executable, "-m", "coolsecture", "similarity",
                       "--matrix-a", str(obs), "--matrix-b", tgt,
                       "--out-prefix", prefix,
-                      "--max-dist-mb", f"{auto_max_dist:.6g}" if auto_max_dist is not None else "10"] + shlex.split(args.cross_validate_args))
+                      "--max-dist-mb", f"{auto_max_dist:.6g}" if auto_max_dist is not None else "10"] + shlex.split(args.similarity_args))
         for lift in sorted(glob.glob(downstream_prefix + ".r*.liftContacts")):
             m = re.search(r"\.r(\d+)\.liftContacts$", lift)
             suffix = f".r{m.group(1)}" if m else ""
@@ -315,10 +315,10 @@ def main():
         obs = base + ".Observed.cool"
         tgt = base + ".Target.cool"
         if os.path.exists(obs) and os.path.exists(tgt):
-            _run([sys.executable, "-m", "coolsecture", "cross-validate",
+            _run([sys.executable, "-m", "coolsecture", "similarity",
                   "--matrix-a", obs, "--matrix-b", tgt,
                   "--out-prefix", base,
-                  "--max-dist-mb", f"{auto_max_dist:.6g}" if auto_max_dist is not None else "10"] + shlex.split(args.cross_validate_args))
+                  "--max-dist-mb", f"{auto_max_dist:.6g}" if auto_max_dist is not None else "10"] + shlex.split(args.similarity_args))
         matches = sorted(glob.glob(base + ".pbad.*frame.bedGraph"))
         pbad = matches[0] if matches else None
         cmd = [sys.executable, "-m", "coolsecture", "plot-cross",

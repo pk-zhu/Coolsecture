@@ -103,7 +103,7 @@ def _scc_from_coolers(clr_a, clr_b, max_dist_bins, min_dist_bins):
 
 def main():
     p = argparse.ArgumentParser(
-        prog="cross-validate",
+        prog="similarity",
         description="Compute stratum-adjusted correlation coefficient (SCC) between matched source-coordinate matrices (typically Observed vs Target from lift2matrix)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
