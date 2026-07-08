@@ -204,6 +204,15 @@ def cool_files(a,b,res=None):
         f"step3/{a}_{b}{suffix}.Target.cool"
     ]
 
+def scc_files(a,b,res=None):
+    # Return similarity (SCC) files for the workflow
+    suffix = f".r{res}" if res is not None else ""
+    return [
+        f"step3/{a}_vs_{b}{suffix}.scc.tsv",
+        f"step3/{a}_vs_{b}{suffix}.scc.summary.tsv",
+        f"step3/{a}_vs_{b}{suffix}.scc.pdf",
+    ]
+
 # -----------------------
 # Rule: all
 # -----------------------
@@ -236,11 +245,13 @@ def outputs_all():
                 outs += cstat_files(a,b, r)
                 outs += metric_files(a,b, r)
                 outs += cool_files(a,b, r)
+                outs += scc_files(a,b, r)
         else:
             outs.append(lift_path(a,b))
             outs += cstat_files(a,b)
             outs += metric_files(a,b)
             outs += cool_files(a,b)
+            outs += scc_files(a,b)
     return outs
 
 rule all:
@@ -486,6 +497,28 @@ if RES_LIST:
                 "--fadix", input.fai,
                 "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}.r{wildcards.res}",
             ])
+
+    # -----------------------
+    # step3: similarity (per pair, per resolution)
+    # -----------------------
+    rule similarity:
+        input:
+            obs="step3/{a}_{b}.r{res}.Observed.cool",
+            tgt="step3/{a}_{b}.r{res}.Target.cool"
+        output:
+            scc_tsv="step3/{a}_vs_{b}.r{res}.scc.tsv",
+            scc_summary="step3/{a}_vs_{b}.r{res}.scc.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}.r{res}.scc.pdf"
+        threads: DEFAULT_THREADS
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "similarity",
+                "--matrix-a", input.obs,
+                "--matrix-b", input.tgt,
+                "--format", "pdf",
+                "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}.r{wildcards.res}",
+            ])
 else:
     # -----------------------
     # step2: liftcontracts (per pair)
@@ -594,4 +627,26 @@ else:
                 "--liftover", input.liftover,
                 "--fadix", input.fai,
                 "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
+            ])
+
+    # -----------------------
+    # step3: similarity (per pair)
+    # -----------------------
+    rule similarity:
+        input:
+            obs="step3/{a}_{b}.Observed.cool",
+            tgt="step3/{a}_{b}.Target.cool"
+        output:
+            scc_tsv="step3/{a}_vs_{b}.scc.tsv",
+            scc_summary="step3/{a}_vs_{b}.scc.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}.scc.pdf"
+        threads: DEFAULT_THREADS
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "similarity",
+                "--matrix-a", input.obs,
+                "--matrix-b", input.tgt,
+                "--format", "pdf",
+                "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}",
             ])
