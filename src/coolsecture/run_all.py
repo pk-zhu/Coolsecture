@@ -131,13 +131,18 @@ def main():
 
     p.add_argument("--prepare-args", default="", help="Extra args for prepare")
     p.add_argument("--link2mark-args", default="", help="Extra args for link2mark")
-    p.add_argument("--liftcontracts-args", default="", help="Extra args for liftcontracts liftover")
+    p.add_argument("--liftcontacts-args", default="", help="Extra args for liftcontacts liftover")
+    p.add_argument("--liftcontracts-args", default="", dest="liftcontracts_args_legacy",
+                   help="[Deprecated alias for --liftcontacts-args]")
     p.add_argument("--contact-stat-args", default="", help="Extra args for contact-stat")
     p.add_argument("--metric-args", default="", help="Extra args for metric")
     p.add_argument("--lift2matrix-args", default="", help="Extra args for lift2matrix")
     p.add_argument("--similarity-args", default="", help="Extra args for similarity")
     p.add_argument("--plot-cross-args", default="", help="Extra args for plot-cross")
     args = p.parse_args()
+    # Merge deprecated --liftcontracts-args alias into --liftcontacts-args.
+    if getattr(args, "liftcontracts_args_legacy", ""):
+        args.liftcontacts_args = (args.liftcontacts_args + " " + args.liftcontracts_args_legacy).strip()
     out = Path(args.out_prefix)
     step0 = out / "step0"
     step1 = out / "step1"
@@ -230,10 +235,10 @@ def main():
     downstream_liftover = downstream_prefix + ".liftContacts"
     if multi_res:
         extra_bidir = _sanitize_extra_args(
-            args.liftcontracts_args,
+            args.liftcontacts_args,
             remove_flags=["--contact-a", "--contact-b", "--matrix-a-prefix", "--matrix-b-prefix", "--write-merged"],
         )
-        _run([sys.executable, "-m", "coolsecture", "liftcontracts",
+        _run([sys.executable, "-m", "coolsecture", "liftcontacts",
               "--matrix-a-prefix", str(prep_a),
               "--matrix-b-prefix", str(prep_b),
               "--fadix-a", fai_a, "--fadix-b", fai_b,
@@ -241,10 +246,10 @@ def main():
               "--out-prefix", str(lift_prefix)] + extra_bidir)
     else:
         extra_bidir = _sanitize_extra_args(
-            args.liftcontracts_args,
+            args.liftcontacts_args,
             remove_flags=["--contact-a", "--contact-b", "--matrix-a-prefix", "--matrix-b-prefix", "--write-merged"],
         )
-        _run([sys.executable, "-m", "coolsecture", "liftcontracts",
+        _run([sys.executable, "-m", "coolsecture", "liftcontacts",
               "--contact-a", str(prep_a) + ".contacts.tsv",
               "--contact-b", str(prep_b) + ".contacts.tsv",
               "--fadix-a", fai_a, "--fadix-b", fai_b,

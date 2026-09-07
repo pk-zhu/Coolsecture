@@ -155,7 +155,7 @@ def main():
         ax.plot(np.array(ds) * res / 1e6, rs, lw=1.2, color="#f1594f", alpha=0.85)
     ax.set_xlabel("genomic distance (Mb)")
     ax.set_ylabel("stratum Pearson r")
-    ax.set_title(f"SCC = {scc:.4f}")
+    ax.set_title(f"SCC-like = {scc:.4f}")
     ax.grid(True, alpha=0.3)
     fig_path = f"{args.out_prefix}.scc.{args.format}"
     _save_fig(fig, fig_path, fmt=args.format, dpi=args.dpi)
