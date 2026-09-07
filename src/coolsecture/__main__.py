@@ -39,7 +39,7 @@ def main():
         "metric":       "Compute P-BAD and other metrics; write bedGraph and summary plots.",
         "plot-cross":   "Plot split-triangle heatmap (UPPER & LOWER modes).",
         "lift2matrix":  "Convert liftContacts to matrices (.cool or .hic).",
-        "run-all":      "End-to-end pipeline (no plot-cross).",
+        "run-all":      "End-to-end pipeline, incl. similarity and automatic plot-cross loci.",
         "multiscale":   "Multi-scale PBAD summary from multi-resolution liftover.",
         "similarity":   "HiCRep-inspired SCC-like score between matched source-coordinate matrices.",
     }
