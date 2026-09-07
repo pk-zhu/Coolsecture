@@ -576,11 +576,23 @@ def main():
     p.add_argument("--mark-ba", help="B->A .mark (optional; if not provided, invert mark-ab)")
     p.add_argument("--agg-frame", type=int, default=150000, help="Aggregation frame on B (bp)")
     p.add_argument("--dups-filter", choices=['length','coverage','deviation','none','default'], default='default',
-        help="Duplicate contact selection rule: length (longest alignment), coverage (highest coverage), deviation (lowest), none (keep all), default (rank-based)")
+        help=("Rule for retaining one contact when a source contact maps to multiple separated target groups. "
+              "The kept contact goes to .liftContacts and the losing alternatives to .discarded_dups.tsv "
+              "(never silently dropped). Each rule picks the more RELIABLE target placement: "
+              "deviation = smallest target-coordinate spread (tightest placement); "
+              "length = shortest target contact distance, with intra-chromosomal always preferred over "
+              "inter-chromosomal (a genomic distance on target, NOT an alignment length); "
+              "coverage = highest joint Hi-C read depth of the two target bins (best-sampled anchors); "
+              "default = highest summed remapping weight (most uniquely/confidently mapped placement); "
+              "none = no comparison, keep the first/primary candidate and route all later alternatives to .discarded_dups.tsv. "
+              "Ties keep the first candidate."))
     p.add_argument("--model", choices=['balanced','raw'], default='raw',
-        help="Normalization model: balanced (use cooler weights) or raw (use raw counts)")
+        help=("Normalization model for lifted contacts: balanced divides the aggregated observed/target "
+              "contact values by the summed remapping-coverage weight (c[-3]) to normalize for liftover "
+              "coverage/ambiguity; raw applies no such division. Note: Cooler bin weights are already "
+              "applied during `prepare`, not here."))
     p.add_argument("--uncert-thr", type=float, default=0.5, help="Remapping coverage threshold for uncertainty tag")
-    p.add_argument("--frame", type=int, default=8, help="Window size (bins) for PBAD summary")
+    p.add_argument("--frame", type=int, default=8, help="Half-window size (bins) for the PBAD summary (window spans 2*frame+1 bins)")
     p.add_argument(
         "--pbad-mode",
         choices=["auto", "on", "off"],
@@ -594,7 +606,7 @@ def main():
         help="In --pbad-mode auto, skip PBAD when any liftContacts file exceeds this MB (<=0 disables auto-skip)",
     )
     p.add_argument("--interactive", default="auto", choices=["auto","on","off"],
-        help="Write interactive Plotly HTML for summary/tag tables")
+        help="Also write interactive Plotly HTML summary/tag charts")
     p.add_argument("--no-tags", action="store_true",
         help="Disable uncertainty tag file output")
     # Deprecated compatibility flag: merged output is always generated.

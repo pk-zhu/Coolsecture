@@ -14,7 +14,7 @@ def main():
         description=("Generate three diagnostics from a .liftContacts file:\n"
             "  1) Percentile heatmap (observed vs. target percentile scores)\n"
             "  2) Distance heatmap (source vs. target genomic distances for lifted-over contacts)\n"
-            "  3) Ratio scatter (genomic distance vs. percentile score)"),
+            "  3) Ratio scatter (log2 source/target genomic distance on x vs. log2 source/target percentile/score ratio on y)"),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--liftover", help="Path to .liftContacts file")
@@ -23,16 +23,18 @@ def main():
     p.add_argument("--stats-a", help="Optional species-A step1 stats.tsv (distance-stratified percentile->score map)")
     p.add_argument("--stats-b", help="Optional species-B step1 stats.tsv (distance-stratified percentile->score map)")
     p.add_argument("--min-bins", type=int, default=0,
-        help="Lower bound on intra-chromosomal bin distance d (open): keep pairs with d > min-bins")
-    p.add_argument("--max-bins", type=int, default=20, 
-        help="Upper bound on intra-chromosomal bin distance d (closed): keep pairs with d ≤ max-bins")
+        help="Lower bound on intra-chromosomal bin distance d (open): keep percentile-heatmap pairs with d > min-bins (percentile heatmap only)")
+    p.add_argument("--max-bins", type=int, default=20,
+        help="Upper bound on intra-chromosomal bin distance d (closed): percentile-heatmap pairs with d <= max-bins (percentile heatmap only)")
     p.add_argument("--repeats", type=int, default=5, help="Number of randomization repeats for null/target estimation")
-    p.add_argument("--bins", type=int, default=100, help="Number of bins for 2D histograms")
+    p.add_argument("--bins", type=int, default=100,
+        help="Upper baseline for the 2D-histogram bin count; the actual count adapts down with point number (floors: 40 percentile, 60 distance, 80 ratio)")
     p.add_argument("--cmap", default="pinkblue", choices=["pinkblue","RdBu_r","coolwarm","PuOr_r","viridis"], 
         help="Colormap for heatmaps")
     p.add_argument("--vmax", type=float, default=None,
         help="Symmetric color limit for diverging maps (|v| ≤ vmax); if None, use 99th percentile")
-    p.add_argument("--max-dist-mb", type=float, default=5.0, help="Axis limit (Mb) for the distance heatmap")
+    p.add_argument("--max-dist-mb", type=float, default=5.0,
+        help="Upper cap (Mb) for the distance heatmap axes; the limit adaptively shrinks to the data (min of this and ~99.5th percentile, floor 5 Mb). Also clips distances in modern-mode ratio scatter.")
     p.add_argument("--format", default="pdf", choices=["pdf","png","svg"], help="Figure format (default: pdf)")
     p.add_argument("--dpi", type=int, default=300, help="DPI for raster outputs")
     p.add_argument("--xy-range", type=float, default=20.0, help="Axis range for distance/percentile ratio scatter")

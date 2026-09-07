@@ -640,17 +640,47 @@ def iDuplicateContact(Contact_disp_L: List, ObjCoorMP1: Tuple, ObjCoorMP2: Tuple
 
 
 def choose_best(writed: Tuple, dupled: Tuple, crit: str) -> bool:
-    """Choose best contact based on criteria."""
+    """Decide whether the already-kept candidate (``writed``) is at least as
+    good as the newly arriving candidate (``dupled``).
+
+    Both candidates share the same source coordinates and differ only in where
+    they land on the target genome; exactly one is retained. Returning True
+    keeps ``writed`` (and routes ``dupled`` to .discarded_dups.tsv); returning
+    False replaces the kept contact with ``dupled``. Ties keep the first/primary
+    candidate.
+
+    Field semantics (to_write tuple):
+      [5]  target_deviations        - target-coordinate spread; smaller = tighter
+      [8]  target_coverages_pos1    - Hi-C read depth of target bin 1; higher = better sampled
+      [9]  target_coverages_pos2    - Hi-C read depth of target bin 2; higher = better sampled
+      [10] target_contact_distances - target genomic span in bins (-1 = inter-chromosomal)
+      [11] remapping_coverages      - summed liftover weight; higher = more unique/confident map
+    """
+    if crit == 'deviation':
+        # Most precise target placement: minimize spread.
+        return writed[5] <= dupled[5]
+    if crit == 'length':
+        # Short-range target contacts are intrinsically stronger; intra always
+        # beats the inter-chromosomal sentinel (-1). Among intra, shorter wins.
+        w_inter = writed[10] < 0
+        d_inter = dupled[10] < 0
+        if w_inter and d_inter:
+            return True
+        if w_inter:
+            return False
+        if d_inter:
+            return True
+        return writed[10] <= dupled[10]
     if crit == 'coverage':
-        return (writed[-2] * writed[-3]) < (dupled[-2] * dupled[-3])
-    elif crit == 'deviation':
-        return writed[5] < dupled[5]
-    elif crit == 'length':
-        return (writed[-2] < dupled[-2]) or (dupled[-2] < 0)
-    elif crit == 'none':
+        # Best-sampled target anchors: MAXIMIZE joint target-bin read coverage
+        # (a contact is only as reliable as its two target bins).
+        return (writed[8] * writed[9]) >= (dupled[8] * dupled[9])
+    if crit == 'none':
+        # No comparison: keep the first/primary candidate.
         return True
-    else:
-        return writed[-1] < dupled[-1]
+    # default ('remapping'): most uniquely/confidently mapped placement wins,
+    # i.e. MAXIMIZE the summed remapping weight (1:1 maps are heavy, 1:many dilute).
+    return writed[11] >= dupled[11]
 
 
 def _infer_resolution_from_bins(bins_dict: Dict) -> int:
@@ -1679,8 +1709,8 @@ def main():
         description='[Deprecated alias for liftcontacts] Run A->B and B->A liftover.',
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    p.add_argument('--contact-a', help='A: .contacts.rich.tsv')
-    p.add_argument('--contact-b', help='B: .contacts.rich.tsv')
+    p.add_argument('--contact-a', help='A: .contacts.tsv from prepare')
+    p.add_argument('--contact-b', help='B: .contacts.tsv from prepare')
     p.add_argument('--matrix-a-prefix', help='Batch mode: prefix for A multi-resolution .contacts.tsv')
     p.add_argument('--matrix-b-prefix', help='Batch mode: prefix for B multi-resolution .contacts.tsv')
     p.add_argument('--fadix-a', required=True, help='FASTA index (.fai) for A')
@@ -1688,19 +1718,44 @@ def main():
     p.add_argument('--mark', required=True, help='Path to A->B .mark')
     p.add_argument('--mark-ba', help='Path to B->A .mark (optional; if not provided, invert --mark)')
     p.add_argument('--agg-frame', type=int, default=150000, help='Aggregation frame on B (bp) to merge adjacent remapped bins')
-    p.add_argument('--dups-filter', choices=['length','coverage','deviation','none','default'], default='default', help='Duplicate selection rule')
-    p.add_argument('--model', choices=['balanced','raw'], default='raw', help='Normalization model')
+    p.add_argument('--dups-filter', choices=['length','coverage','deviation','none','default'], default='default',
+        help=('Rule for retaining one contact when a source contact maps to multiple separated target groups. '
+              'The kept contact goes to .liftContacts and the losing alternatives to .discarded_dups.tsv '
+              '(never silently dropped). Each rule picks the more RELIABLE target placement: '
+              'deviation = smallest target-coordinate spread (tightest placement); '
+              'length = shortest target contact distance, with intra-chromosomal always preferred over '
+              'inter-chromosomal (a genomic distance on target, NOT an alignment length); '
+              'coverage = highest joint Hi-C read depth of the two target bins (best-sampled anchors); '
+              'default = highest summed remapping weight (most uniquely/confidently mapped placement); '
+              'none = no comparison, keep the first/primary candidate and route all later alternatives to .discarded_dups.tsv. '
+              'Ties keep the first candidate.'))
+    p.add_argument('--model', choices=['balanced','raw'], default='raw',
+        help=('Normalization model for lifted contacts: balanced divides aggregated contact values by the '
+              'summed remapping-coverage weight (c[-3]) to normalize for liftover coverage/ambiguity; raw '
+              'applies no division. Cooler bin weights are already applied during prepare, not here.'))
+    p.add_argument('--uncert-thr', type=float, default=0.5, help='Remapping coverage threshold for uncertainty tag')
+    p.add_argument('--frame', type=int, default=8, help='Half-window size (bins) for the PBAD summary (window spans 2*frame+1 bins)')
+    p.add_argument('--pbad-mode', choices=['auto','on','off'], default='auto',
+        help='PBAD computation mode: auto skips PBAD for large liftContacts files')
+    p.add_argument('--pbad-auto-threshold-mb', type=float, default=1024.0,
+        help='In --pbad-mode auto, skip PBAD when any liftContacts file exceeds this MB (<=0 disables auto-skip)')
     p.add_argument('--tmp-dir', help='Directory for temporary spill files')
-    p.add_argument('--spill-threshold-mb', type=float, default=0.0, help='Enable spill mode when contact file size >= this MB (0 disables)')
-    p.add_argument('--hash-shards', type=int, default=16, help='Shard count used by spill mode')
-    p.add_argument("--interactive", default="on", choices=["on","off"], help="Write interactive Plotly HTML for reciprocal-summary outputs")
+    p.add_argument('--spill-threshold-mb', type=float, default=0.0, help='Enable spill mode when contact/liftover file size >= this MB (0 disables)')
+    p.add_argument('--hash-shards', type=int, default=16, help='Shard count used by the run_liftover spill mode')
+    p.add_argument("--interactive", default="auto", choices=["auto","on","off"], help="Also write interactive Plotly HTML summary/tag charts")
+    p.add_argument('--no-tags', action='store_true', help='Disable uncertainty tag file output')
+    p.add_argument('--parallel-directions', action='store_true',
+        help='Run A->B and B->A liftover concurrently in separate processes (doubles peak memory)')
+    p.add_argument('--nthreads', type=int, default=1, help='Threads for contact-diff computation (run_liftover)')
     p.add_argument('--out-prefix', required=True, help='Output prefix')
     a = p.parse_args()
 
     print("[WARN] 'liftcontracts' is a deprecated alias. Forwarding to 'liftcontacts'.")
 
+    # bidirectional.main() parses sys.argv[1:] directly, so argv[0] must be the
+    # program name and no subcommand token may follow it.
     fwd = [
-        'coolsecture', 'liftcontacts',
+        'coolsecture liftcontacts',
         '--fadix-a', a.fadix_a,
         '--fadix-b', a.fadix_b,
         '--mark-ab', a.mark,
@@ -1708,11 +1763,19 @@ def main():
         '--agg-frame', str(a.agg_frame),
         '--dups-filter', a.dups_filter,
         '--model', a.model,
+        '--uncert-thr', str(a.uncert_thr),
+        '--frame', str(a.frame),
+        '--pbad-mode', a.pbad_mode,
+        '--pbad-auto-threshold-mb', str(a.pbad_auto_threshold_mb),
         '--spill-threshold-mb', str(a.spill_threshold_mb),
         '--hash-shards', str(a.hash_shards),
         '--interactive', a.interactive,
-        '--no-tags',
+        '--nthreads', str(a.nthreads),
     ]
+    if a.no_tags:
+        fwd += ['--no-tags']
+    if a.parallel_directions:
+        fwd += ['--parallel-directions']
     if a.tmp_dir:
         fwd += ['--tmp-dir', a.tmp_dir]
     if a.mark_ba:

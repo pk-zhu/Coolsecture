@@ -85,7 +85,7 @@ def _scc_from_coolers(clr_a, clr_b, max_dist_bins, min_dist_bins):
             if d < min_dist_bins or d > max_dist_bins:
                 continue
             _accumulate_stats(stats, d, 0.0, float(v))
-    # compute per-stratum r and SCC
+    # compute per-stratum r and the SCC-like aggregate
     rows = []
     for d, (n, sx, sy, sxx, syy, sxy) in stats.items():
         r = _pearson_from_stats(n, sx, sy, sxx, syy, sxy)
@@ -104,7 +104,10 @@ def _scc_from_coolers(clr_a, clr_b, max_dist_bins, min_dist_bins):
 def main():
     p = argparse.ArgumentParser(
         prog="similarity",
-        description="Compute stratum-adjusted correlation coefficient (SCC) between matched source-coordinate matrices (typically Observed vs Target from lift2matrix)",
+        description="Compute a HiCRep-inspired SCC-like score between matched source-coordinate matrices "
+                    "(typically Observed vs Target from lift2matrix): per-distance-stratum Pearson correlation, "
+                    "aggregated weighted by stratum pixel count. NOTE: this is a simplified SCC-like statistic; "
+                    "it does not apply HiCRep's 2-D stratum smoothing or inverse-variance weights.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--matrix-a", required=True, help="Observed matrix (lift2matrix outputs)")
@@ -127,7 +130,7 @@ def main():
 
     rows, scc, std = _scc_from_coolers(clr_a, clr_b, max_dist_bins, args.min_dist_bins)
 
-    out_tsv = f"{args.out_prefix}.scc.tsv"
+    out_tsv = f"{args.out_prefix}.scc-like.tsv"
     with open(out_tsv, "w") as f:
         f.write("dist_bins\tcount\tpearson_r\tweight\n")
         for d, n, r, w in rows:
@@ -135,11 +138,11 @@ def main():
             w_str = f"{w:.6f}" if np.isfinite(w) else "nan"
             f.write(f"{d}\t{n}\t{r_str}\t{w_str}\n")
 
-    out_summary = f"{args.out_prefix}.scc.summary.tsv"
+    out_summary = f"{args.out_prefix}.scc-like.summary.tsv"
     valid_rows = [(d, n, r, w) for d, n, r, w in rows if np.isfinite(r)]
     with open(out_summary, "w") as f:
         f.write("metric\tvalue\n")
-        f.write(f"scc\t{scc:.6f}\n" if np.isfinite(scc) else "scc\tnan\n")
+        f.write(f"scc_like\t{scc:.6f}\n" if np.isfinite(scc) else "scc_like\tnan\n")
         f.write(f"std\t{std:.6f}\n" if np.isfinite(std) else "std\tnan\n")
         f.write(f"n_strata\t{len(valid_rows)}\n")
         f.write(f"total_weight\t{sum(w for _, _, _, w in valid_rows):.6f}\n")
@@ -157,7 +160,7 @@ def main():
     ax.set_ylabel("stratum Pearson r")
     ax.set_title(f"SCC-like = {scc:.4f}")
     ax.grid(True, alpha=0.3)
-    fig_path = f"{args.out_prefix}.scc.{args.format}"
+    fig_path = f"{args.out_prefix}.scc-like.{args.format}"
     _save_fig(fig, fig_path, fmt=args.format, dpi=args.dpi)
     plt.close(fig)
     print(f"[OK] {out_tsv}")

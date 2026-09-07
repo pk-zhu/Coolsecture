@@ -60,16 +60,19 @@ def paf_to_link(paf_path: Path, link_path: Path, min_match: int = 0):
             n_out += 1
     print(f"[OK] PAF records: {n_in}, link: {n_out} -> {link_path}")
 
-MUMMER_BIN_DIR = "/home/pkzhu/software/mummer-4.0.1"
-
 def _mummer_tool(name: str) -> str:
+    # Locate mummer4 binaries from PATH; optionally override the search
+    # directory via the COOLSECTURE_MUMMER_DIR environment variable.
     exe = shutil.which(name)
     if not exe:
-        candidate = os.path.join(MUMMER_BIN_DIR, name)
-        if os.path.exists(candidate) and os.access(candidate, os.X_OK):
-            exe = candidate
+        bin_dir = os.environ.get("COOLSECTURE_MUMMER_DIR")
+        if bin_dir:
+            candidate = os.path.join(bin_dir, name)
+            if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+                exe = candidate
     if not exe:
-        sys.exit(f"[ERROR] {name} not found; install mummer4 or add {MUMMER_BIN_DIR} to PATH.")
+        sys.exit(f"[ERROR] {name} not found; install mummer4 and ensure it is on PATH "
+                 f"(or set COOLSECTURE_MUMMER_DIR to its bin directory).")
     return exe
 
 def run_mummer4(ref: str, qry: str, out_prefix: Path,
@@ -177,8 +180,10 @@ def main():
     ap.add_argument("--min-match", type=int, default=0,
                     help="Minimum matched bases to keep a PAF record (column 10, minimap2 only)")
     ap.add_argument("--mummer-filter", choices=["1-to-1","mutual-best","none"], default="1-to-1",
-                    help="delta-filter mode (mummer4 only). 1-to-1: each query position maps to "
-                         "exactly one ref position and vice versa. mutual-best: -m. none: skip filter.")
+                    help="delta-filter mode (mummer4 only). 1-to-1: delta-filter -1, keep one-to-one "
+                         "syntenic alignments. mutual-best: delta-filter -m, keep many-to-many "
+                         "alignments allowing rearrangements (despite the label, this is mummer's -m, "
+                         "not a mutual-best filter). none: skip delta-filter.")
     ap.add_argument("--mummer-min-idy", type=float, default=0,
                     help="Minimum alignment identity %% for delta-filter (mummer4 only)")
     ap.add_argument("--mummer-min-len", type=int, default=0,

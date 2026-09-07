@@ -16,7 +16,8 @@ def main():
     p.add_argument("--fadix", required=True, help="Path to FASTA index (.fai) file")
     p.add_argument("--frames", type=int, nargs="+", default=[8], help="Half-window size in bins")
     p.add_argument("--metric", choices=["pbad","log","stripe","pearsone","spearman"], default="pbad", help="Metric type")
-    p.add_argument("--max-dist-mb", type=float, default=100.0, help="Max intra-chrom distance (Mb)")
+    p.add_argument("--max-dist-mb", type=float, default=100.0,
+        help="Upper cap on intra-chromosomal pair separation within each metric window (Mb); rarely binds because pairs are already restricted to the +/-frame half-window")
     p.add_argument("--format", default="pdf", choices=["pdf","png","svg"], help="Figure format (default: pdf)")
     p.add_argument("--dpi", type=int, default=300, help="DPI for raster outputs")
     p.add_argument("--out-prefix", required=True, help="Output prefix for bedGraph and figures")
@@ -33,7 +34,7 @@ def main():
             out_bg = f"{out_prefix}.{args.metric}.{frame}frame.bedGraph"
             with open(out_bg, 'w') as f:
                 for (chrom, b1, b2, v) in R:
-                    print(f"{chrom}\t{b1*res}\t{b2*res-1}\t{v}", file=f)
+                    print(f"{chrom}\t{b1*res}\t{b2*res}\t{v}", file=f)
             print(f"[OK] {out_bg}")
 
             obs_vals = np.array([x[3] for x in R if len(x) == 4 and np.isfinite(x[3])], dtype=float)

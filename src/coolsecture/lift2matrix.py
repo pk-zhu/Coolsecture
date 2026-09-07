@@ -382,7 +382,8 @@ def main():
     p.add_argument("--liftover-prefix", help="Prefix to batch process .liftContacts (e.g., out/A_B)")
     p.add_argument("--fadix", required=True, help="Path to FASTA index (.fai) file")
     p.add_argument("--assembly", help="Value for Cooler 'assembly' metadata (e.g., 'TAIR10'); optional")
-    p.add_argument("--format", default="cool", choices=["cool", "hic", "both"], help="Output format")
+    p.add_argument("--format", default="cool", choices=["cool", "hic", "both"],
+        help="Output format; 'hic'/'both' additionally shell out to a 'juicer_tools' executable on PATH to write the .hic file")
     p.add_argument("--tmp-dir", help="Directory for temporary spill files")
     p.add_argument(
         "--spill-threshold-mb",
@@ -409,8 +410,15 @@ def main():
             )
         print("Note: matrices remain in source coordinates; values represent 0-100 percentiles.")
     except Exception as e:
-        print(f"Warning: Encountered error during processing: {e}")
-        print("Continuing with workflow...")
+        # Surface real failures (e.g. missing juicer_tools for --format hic/both)
+        # with a non-zero exit instead of silently reporting success.
+        sys.stderr.write(f"[ERROR] lift2matrix failed: {e}\n")
+        if str(args.format) in ("hic", "both"):
+            sys.stderr.write(
+                "[ERROR] Writing .hic requires the 'juicer_tools' executable on PATH "
+                "(use --format cool to write only .cool matrices).\n"
+            )
+        sys.exit(1)
     sys.exit(0)
 
 

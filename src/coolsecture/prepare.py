@@ -20,7 +20,7 @@ CTS_DTYPE = np.dtype([
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         prog="prepare",
-        description=("Preprocess a .cool/.mcool/.hic into contact tables with percentile scores by distance bucket (vectorized, single-process)."),
+        description=("Preprocess a .cool/.mcool/.hic into contact tables with percentile scores by distance bucket."),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ap.add_argument("--matrix", required=True, help="Path to .cool/.mcool::resolutions/RES or .hic")
@@ -28,15 +28,17 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--chunksize", type=int, default=5000000, help="Pixels per chunk to read and process")
     ap.add_argument("--max-distance", type=int, default=10000000, help="Max genomic distance (bp) for intra contacts")
     ap.add_argument("--inter", action="store_true", help="Also keep inter-chrom contacts (bucket key = -1)")
-    ap.add_argument("--nthreads", type=int, default=1, help="Thread cap for BLAS/OMP backends (no multiprocessing)")
+    ap.add_argument("--nthreads", type=int, default=1, help="Threads/workers: caps BLAS/OMP backends, hic2cool nproc for .hic, and parallel resolutions")
     ap.add_argument("--resolution", "-res", default=None,
         help="Resolution(s) in bp. Use comma-separated values for multi-resolution .mcool or .hic input.")
 
     ap.add_argument("--summary", action="store_true",
-        help="Write multi-resolution summary table/plot when --resolution provides multiple values")
-    ap.add_argument("--dpi", type=int, default=300, help="DPI for raster outputs")
+        help="Write multi-resolution summary table/plot (emitted on the multi-resolution path; "
+             "for .mcool this also triggers with a single --resolution, while a single-resolution .hic run ignores it)")
+    ap.add_argument("--dpi", type=int, default=300,
+        help="DPI for raster outputs (reserved; the summary plot is written as vector PDF so this has no effect)")
     ap.add_argument("--interactive", default="auto", choices=["auto","on","off"],
-        help="Write interactive Plotly HTML for summary table")
+        help="Also write an interactive Plotly HTML summary chart (only with --summary)")
     return ap.parse_args()
 
 def set_thread_env(n: int) -> None:
@@ -228,7 +230,7 @@ def second_pass_write(outputs_prefix: Path,
     ensure_dir(stats_file)
     with open(contacts_file, "w", buffering=1024*1024) as f_cts, open(stats_file, "w", buffering=1024*1024) as f_stats:
         f_cts.write("chrom1\tstart1\tend1\tbin1\tchrom2\tstart2\tend2\tbin2\trank\tstrict\tweak\tcov1\tcov2\tdist_bins\n")
-        f_stats.write("dist_bin\tn\tp05\tp50\tp95\tslice_medians_100(sep=;)\n")
+        f_stats.write("dist_bin\tn\tp05\tp50\tp95\t" + "\t".join(f"p{i:03d}" for i in range(1, 101)) + "\n")
         keys = sorted([k for k in keys_seen if k >= 0])
         if -1 in keys_seen:
             keys.append(-1)

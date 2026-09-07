@@ -41,7 +41,7 @@ def main():
         "lift2matrix":  "Convert liftContacts to matrices (.cool or .hic).",
         "run-all":      "End-to-end pipeline (no plot-cross).",
         "multiscale":   "Multi-scale PBAD summary from multi-resolution liftover.",
-        "similarity":   "Stratum-adjusted correlation (HiCRep-style) between matched source-coordinate matrices.",
+        "similarity":   "HiCRep-inspired SCC-like score between matched source-coordinate matrices.",
     }
 
     parser = argparse.ArgumentParser(

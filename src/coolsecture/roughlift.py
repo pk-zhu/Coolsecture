@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 
+# Coarse bin size (bp) used for BOTH indexing the .mark map and querying the
+# BED track. Must be identical on the mark and BED sides or lookups miss; the
+# lifted BED intervals are emitted at this same granularity.
+BIN_BP = 200
+
 def ChromIndexingFAI(path):
     ChrInd = {}
     with open(path, 'r') as f:
@@ -22,8 +27,8 @@ def lftReadingMarkPoints(mark_path, ChrIdxs1, ChrIdxs2):
             try:
                 N1 = ChrIdxs1.get(a[0], ChrIdxs1.get(a[0][3:]))
                 N2 = ChrIdxs2.get(a[3], ChrIdxs2.get(a[3][3:]))
-                c1 = (int(a[1]) + int(a[2])) // 400
-                c2 = (int(a[4]) + int(a[5])) // 400
+                c1 = (int(a[1]) + int(a[2])) // 2 // BIN_BP
+                c2 = (int(a[4]) + int(a[5])) // 2 // BIN_BP
             except Exception:
                 continue
             if N1 is None or N2 is None:
@@ -39,8 +44,8 @@ def lftRough(ObjCoorMP, ChrIdxs1, ChrIdxs2, bed, out_bed):
             a = line.split()
             try:
                 N1 = ChrIdxs1.get(a[0], ChrIdxs1.get(a[0][3:]))
-                c1 = int(a[1]) // 200
-                c2 = int(a[2]) // 200
+                c1 = int(a[1]) // BIN_BP
+                c2 = int(a[2]) // BIN_BP
             except Exception:
                 continue
             if N1 is None:
@@ -50,7 +55,7 @@ def lftRough(ObjCoorMP, ChrIdxs1, ChrIdxs2, bed, out_bed):
                 if not lifted:
                     continue
                 for (n2, b2) in lifted:
-                    out.write(f"{ChrIdxs2[n2]}\t{b2*200}\t{b2*200+199}\t{a[3] if len(a)>3 else '.'}\n")
+                    out.write(f"{ChrIdxs2[n2]}\t{b2*BIN_BP}\t{b2*BIN_BP+BIN_BP-1}\t{a[3] if len(a)>3 else '.'}\n")
 
 def main():
     p = argparse.ArgumentParser(
