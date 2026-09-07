@@ -40,7 +40,7 @@ in memory.
 - Lift contacts A→B and B→A, then summarize reciprocal consistency.
 - Reconstruct observed/target `.cool` or `.hic` matrices from lifted contacts.
 - PBAD and related metrics, diagnostic plots, split-triangle cross plots,
-  HiCRep-style SCC.
+  HiCRep-inspired SCC-like similarity score.
 - Run command-by-command, through `run-all`, or via the example Snakemake
   workflows.
 
@@ -54,7 +54,7 @@ cd Coolsecture
 python -m pip install -e .
 ```
 
-Optional extras (`.hic` reading, Plotly HTML, SCC stats):
+Optional extras (`.hic` reading, Plotly HTML, SCC-like stats):
 
 ```bash
 python -m pip install -e ".[hic]"
@@ -93,7 +93,7 @@ Available commands:
 | `lift2matrix` | Convert lifted contacts to observed/target `.cool` or `.hic` matrices. |
 | `plot-cross` | Draw split-triangle cross-species heatmaps for a locus. |
 | `multiscale` | Summarize PBAD stability across multiple resolutions. |
-| `similarity` | Compute stratum-adjusted correlation (HiCRep-style SCC) between matched matrices. |
+| `similarity` | Compute stratum-adjusted correlation (HiCRep-inspired SCC-like similarity score) between matched matrices. |
 | `run-all` | Run the main end-to-end pipeline from FASTA and matrices. |
 
 Note: in the current CLI, FASTA index arguments are named `--fadix`,
@@ -118,9 +118,7 @@ vector among `KR`, `VC_SQRT`, `VC`, or `weight`.
 
 ## Quick Start: End-to-End
 
-`run-all` chains the full pipeline — alignment, mark generation, contact
-preparation, bidirectional liftover, statistics, metrics, and matrix
-reconstruction. It does not run `plot-cross`.
+`run-all` chains the full pipeline, including alignment, mark generation, contact preparation, bidirectional lift-over, diagnostic statistics, metrics, matrix reconstruction, similarity scoring, and automatic regional plot-cross visualization.
 
 ```bash
 coolsecture run-all \
@@ -384,9 +382,9 @@ coolsecture similarity \
 
 Outputs:
 
-- `*.scc.tsv`
-- `*.scc.summary.tsv`
-- `*.scc.pdf`
+- `*.scc-like.tsv`
+- `*.scc-like.summary.tsv`
+- `*.scc-like.pdf`
 
 ### 9. Plot a cross-species locus
 
