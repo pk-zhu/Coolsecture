@@ -87,13 +87,13 @@ Available commands:
 | `link2mark` | Convert `.link` or UCSC `.chain` synteny files to `.mark`. |
 | `prepare` | Convert `.cool`, `.mcool`, or `.hic` to ranked contact tables. |
 | `roughlift` | Roughly lift a BED track for quick synteny QA. |
-| `liftcontracts` | Run A->B and B->A contact liftover and reciprocal summaries. |
+| `liftcontacts` | Run A->B and B->A contact liftover and reciprocal summaries. (`liftcontracts` is a deprecated alias.) |
 | `contact-stat` | Plot percentile, distance, and ratio diagnostics from lifted contacts. |
 | `metric` | Compute PBAD and related metrics as bedGraph plus figures. |
 | `lift2matrix` | Convert lifted contacts to observed/target `.cool` or `.hic` matrices. |
 | `plot-cross` | Draw split-triangle cross-species heatmaps for a locus. |
 | `multiscale` | Summarize PBAD stability across multiple resolutions. |
-| `cross-validate` | Compute stratum-adjusted correlation (HiCRep-style SCC) between matched matrices. |
+| `similarity` | Compute stratum-adjusted correlation (HiCRep-style SCC) between matched matrices. |
 | `run-all` | Run the main end-to-end pipeline from FASTA and matrices. |
 
 Note: in the current CLI, FASTA index arguments are named `--fadix`,
@@ -146,7 +146,7 @@ coolsecture run-all \
   --name-a Asu \
   --name-b Ath \
   --prepare-args "--max-distance 5000000000 --inter" \
-  --liftcontracts-args "--model balanced --dups-filter coverage --nthreads 8" \
+  --liftcontacts-args "--model balanced --dups-filter coverage --nthreads 8" \
   --metric-args "--frames 8 --metric pbad" \
   --out-prefix run_all
 ```
@@ -282,7 +282,7 @@ Main outputs:
 ### 4. Run bidirectional contact liftover
 
 ```bash
-coolsecture liftcontracts \
+coolsecture liftcontacts \
   --contact-a step1/Asu/Asu.r40000.contacts.tsv \
   --contact-b step1/Ath/Ath.r40000.contacts.tsv \
   --fadix-a step0/Asu.fa.fai \
@@ -374,7 +374,7 @@ Use `--format hic` or `--format both` if `juicer_tools` is available.
 ### 8. Compute matrix similarity
 
 ```bash
-coolsecture cross-validate \
+coolsecture similarity \
   --matrix-a step3/Asu_Ath.r40000.Observed.cool \
   --matrix-b step3/Asu_Ath.r40000.Target.cool \
   --max-dist-mb 10 \
@@ -424,7 +424,7 @@ see `.gitignore`.
 A few commands can emit Plotly HTML alongside the static plots:
 
 - `prepare --summary --interactive auto|on|off`
-- `liftcontracts --interactive auto|on|off`
+- `liftcontacts --interactive auto|on|off`
 - `multiscale --interactive auto|on|off`
 
 ```bash
