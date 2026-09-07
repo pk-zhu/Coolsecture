@@ -21,7 +21,7 @@ COOL_GROUP = config.get("cool_group", "")
 
 LINK2MARK_P  = P.get("link2mark_parameters", "")
 PREPARE_P    = P.get("prepare_parameters", "")
-LIFTCONTRACTS_P = P.get("liftcontracts_parameters", P.get("liftcontacts_parameters", ""))
+LIFTCONTACTS_P = P.get("liftcontacts_parameters", P.get("liftcontracts_parameters", ""))
 CSTAT_P      = P.get("contact_stat_parameters", "")
 METRIC_P     = P.get("metric_parameters", "")
 HAS_MCOOL = any(str(SPEC[s].get("cool", "")).lower().endswith(".mcool") and "::" not in str(SPEC[s].get("cool", "")) for s in SPECIES)
@@ -400,9 +400,9 @@ rule link2mark:
 
 if RES_LIST:
     # -----------------------
-    # step2: liftcontracts (per pair, per resolution)
+    # step2: liftcontacts (per pair, per resolution)
     # -----------------------
-    rule liftcontracts:
+    rule liftcontacts:
         input:
             richA="step1/{a}/{a}.r{res}.contacts.tsv",
             richB="step1/{b}/{b}.r{res}.contacts.tsv",
@@ -413,11 +413,11 @@ if RES_LIST:
             lifted=LIFT_OUTPUT_MULTI
         threads: DEFAULT_THREADS
         params:
-            extra=LIFTCONTRACTS_P
+            extra=LIFTCONTACTS_P
         run:
             out_prefix = f"step2/{wildcards.a}_{wildcards.b}/{wildcards.a}_{wildcards.b}.r{wildcards.res}"
             args = [
-                "liftcontracts",
+                "liftcontacts",
                 "--contact-a", input.richA,
                 "--contact-b", input.richB,
                 "--fadix-a", input.faiA,
@@ -531,9 +531,9 @@ if RES_LIST:
             ])
 else:
     # -----------------------
-    # step2: liftcontracts (per pair)
+    # step2: liftcontacts (per pair)
     # -----------------------
-    rule liftcontracts:
+    rule liftcontacts:
         input:
             richA="step1/{a}/{a}.contacts.tsv",
             richB="step1/{b}/{b}.contacts.tsv",
@@ -544,11 +544,11 @@ else:
             lifted=LIFT_OUTPUT_SINGLE
         threads: DEFAULT_THREADS
         params:
-            extra=LIFTCONTRACTS_P
+            extra=LIFTCONTACTS_P
         run:
             out_prefix = f"step2/{wildcards.a}_{wildcards.b}/{wildcards.a}_{wildcards.b}"
             args = [
-                "liftcontracts",
+                "liftcontacts",
                 "--contact-a", input.richA,
                 "--contact-b", input.richB,
                 "--fadix-a", input.faiA,
