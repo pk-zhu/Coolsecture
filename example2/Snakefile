@@ -218,9 +218,9 @@ def cv_files(a,b,res=None):
     suffix = f".r{res}" if res is not None else ""
     cv_prefix = f"step3/{a}_vs_{b}_on_hg38{suffix}"
     return [
-        f"{cv_prefix}.scc.tsv",
-        f"{cv_prefix}.scc.summary.tsv",
-        f"{cv_prefix}.scc.pdf"
+        f"{cv_prefix}.scc-like.tsv",
+        f"{cv_prefix}.scc-like.summary.tsv",
+        f"{cv_prefix}.scc-like.pdf"
     ]
 
 # -----------------------
@@ -516,9 +516,9 @@ if RES_LIST:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
             tgt="step3/{a}_{b}.r{res}.Target.cool"
         output:
-            scc_tsv="step3/{a}_vs_{b}_on_hg38.r{res}.scc.tsv",
-            scc_summary="step3/{a}_vs_{b}_on_hg38.r{res}.scc.summary.tsv",
-            scc_plot="step3/{a}_vs_{b}_on_hg38.r{res}.scc.pdf"
+            scc_tsv="step3/{a}_vs_{b}_on_hg38.r{res}.scc-like.tsv",
+            scc_summary="step3/{a}_vs_{b}_on_hg38.r{res}.scc-like.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}_on_hg38.r{res}.scc-like.pdf"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
@@ -647,9 +647,9 @@ else:
             obs="step3/{a}_{b}.Observed.cool",
             tgt="step3/{a}_{b}.Target.cool"
         output:
-            scc_tsv="step3/{a}_vs_{b}_on_hg38.scc.tsv",
-            scc_summary="step3/{a}_vs_{b}_on_hg38.scc.summary.tsv",
-            scc_plot="step3/{a}_vs_{b}_on_hg38.scc.pdf"
+            scc_tsv="step3/{a}_vs_{b}_on_hg38.scc-like.tsv",
+            scc_summary="step3/{a}_vs_{b}_on_hg38.scc-like.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}_on_hg38.scc-like.pdf"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
