@@ -205,12 +205,12 @@ def cool_files(a,b,res=None):
     ]
 
 def scc_files(a,b,res=None):
-    # Return similarity (SCC) files for the workflow
+    # Return similarity (SCC-like) files for the workflow
     suffix = f".r{res}" if res is not None else ""
     return [
-        f"step3/{a}_vs_{b}{suffix}.scc.tsv",
-        f"step3/{a}_vs_{b}{suffix}.scc.summary.tsv",
-        f"step3/{a}_vs_{b}{suffix}.scc.pdf",
+        f"step3/{a}_vs_{b}{suffix}.scc-like.tsv",
+        f"step3/{a}_vs_{b}{suffix}.scc-like.summary.tsv",
+        f"step3/{a}_vs_{b}{suffix}.scc-like.pdf",
     ]
 
 # -----------------------
@@ -506,9 +506,9 @@ if RES_LIST:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
             tgt="step3/{a}_{b}.r{res}.Target.cool"
         output:
-            scc_tsv="step3/{a}_vs_{b}.r{res}.scc.tsv",
-            scc_summary="step3/{a}_vs_{b}.r{res}.scc.summary.tsv",
-            scc_plot="step3/{a}_vs_{b}.r{res}.scc.pdf"
+            scc_tsv="step3/{a}_vs_{b}.r{res}.scc-like.tsv",
+            scc_summary="step3/{a}_vs_{b}.r{res}.scc-like.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}.r{res}.scc-like.pdf"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
@@ -637,9 +637,9 @@ else:
             obs="step3/{a}_{b}.Observed.cool",
             tgt="step3/{a}_{b}.Target.cool"
         output:
-            scc_tsv="step3/{a}_vs_{b}.scc.tsv",
-            scc_summary="step3/{a}_vs_{b}.scc.summary.tsv",
-            scc_plot="step3/{a}_vs_{b}.scc.pdf"
+            scc_tsv="step3/{a}_vs_{b}.scc-like.tsv",
+            scc_summary="step3/{a}_vs_{b}.scc-like.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}.scc-like.pdf"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
