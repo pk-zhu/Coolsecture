@@ -92,25 +92,39 @@ def load_bins_arrays(clr: cooler.Cooler) -> Tuple[np.ndarray, np.ndarray, np.nda
     starts = bins["start"].to_numpy(np.int64, copy=False)
     ends = bins["end"].to_numpy(np.int64, copy=False)
     
-    # 优先选择归一化向量：KR > VC_SQRT > VC > weight
+    # 归一化向量优先序：KR > VC_SQRT > VC > weight
     norm_cols = []
     for col in ["KR", "VC_SQRT", "VC", "weight"]:
         if col in bins.columns:
             norm_cols.append(col)
-    
+
     if not norm_cols:
         raise RuntimeError(
             "Input cooler file does not have any normalization vectors. "
             "Coolsecture requires a balanced matrix with normalization vectors "
             "(KR, VC_SQRT, VC, or weight column in bins table)."
         )
-    
+
     # 使用第一个找到的归一化向量
     norm_col = norm_cols[0]
-    weights = bins[norm_col].to_numpy(np.float32, copy=True)
-    invalid = ~np.isfinite(weights) | (weights <= 0)
-    if invalid.any():
-        weights[invalid] = 1.0
+    raw = bins[norm_col].to_numpy(np.float32, copy=True)
+    # 坏 bin（平衡时标记为 NaN/Inf/<=0）回退为原始计数：先把无效权重置 1.0
+    invalid = ~np.isfinite(raw) | (raw <= 0)
+    raw[invalid] = 1.0
+
+    # 两种归一化约定（hic2cool_updates: "cooler uses multiplicative weights
+    # and hic uses divisive weights"）：
+    #   - KR / VC_SQRT / VC（Juicer、hic2cool≥0.5、4DN）是【除数型】：
+    #       balanced = count / (w1 * w2)
+    #   - weight（`cooler balance` 标准产物）是【乘数型】：
+    #       balanced = count * w1 * w2
+    # 下游统一按 count / (f1 * f2) 计算，因此对乘数型 weight 取倒数，
+    # 使 f = 1/w，于是 count / (f1*f2) = count * w1 * w2。
+    DIVISIVE = {"KR", "VC_SQRT", "VC"}
+    if norm_col in DIVISIVE:
+        weights = raw
+    else:  # 'weight' — cooler multiplicative balancing weight
+        weights = 1.0 / raw
     return chroms, starts, ends, weights
 
 def iter_pixels_chunks(clr: cooler.Cooler, chunksize: int):

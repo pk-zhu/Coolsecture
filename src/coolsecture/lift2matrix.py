@@ -408,7 +408,7 @@ def main():
                 args.tmp_dir,
                 args.spill_threshold_mb,
             )
-        print("Note: matrices remain in source coordinates; values represent 0-100 percentiles.")
+        print("Note: matrices remain in source coordinates; values are 0-99 percentile ranks (0 = weakest, 99 = strongest within each distance stratum).")
     except Exception as e:
         # Surface real failures (e.g. missing juicer_tools for --format hic/both)
         # with a non-zero exit instead of silently reporting success.
