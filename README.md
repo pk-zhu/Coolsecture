@@ -151,7 +151,10 @@ coolsecture run-all \
   --out-prefix run_all
 ```
 
-For `.hic` input, install the `hic` extra and provide a single resolution:
+For `.hic` input, install the `hic` extra and pass resolution(s) via
+`--resolution` (a single value for `run-all`; the standalone `prepare` also
+accepts comma-separated values, e.g. `--resolution 40000,100000`, for
+multi-resolution `.hic`):
 
 ```bash
 python -m pip install -e ".[hic]"
@@ -473,8 +476,9 @@ chrom1 start1 end1 bin1  chrom2 start2 end2 bin2  rank strict weak  cov1 cov2  d
 - `rank`/`strict`/`weak` — percentile rank of the contact's normalized signal
   within its distance stratum, on a **0-99** integer scale (`rank` is the
   midpoint rank, `strict`/`weak` bracket it); 99 = strongest.
-- `cov1`/`cov2` — per-bin Hi-C read coverage (total normalized signal incident
-  on each bin); higher = better sampled.
+- `cov1`/`cov2` — per-bin Hi-C read coverage: the total **raw** read count
+  incident on each bin (sum of un-normalized pixel counts touching that bin);
+  higher = better sampled.
 - `dist_bins` — genomic distance in bins; `-1` marks inter-chromosomal contacts.
 
 The companion `.stats.tsv` holds, per distance bin, `n`, `p05/p50/p95`, and 100
@@ -496,7 +500,10 @@ target_contact_distances remapping_coverages
   onto the other genome.
 - `observed_contacts`/`target_contacts` are the 0-99 percentile ranks of the
   source and target contacts.
-- `*_deviations` are coordinate spread (placement uncertainty) in bins.
+- `observed_deviations`/`target_deviations` are the contact's **percentile-rank
+  uncertainty**: how far its rank sits from the strict/weak rank bounds
+  (`max(weak-rank, rank-strict)`), on the 0-99 rank scale. They are rank-width
+  values, not a genomic-coordinate or placement spread in bins.
 - `target_contact_distances` is the target-genome span in bins (`-1` =
   inter-chromosomal).
 - `remapping_coverages` is the summed synteny weight (a 1:1 map is ~1.0; a
@@ -528,11 +535,14 @@ Two normalizations happen at **different stages** — do not confuse them:
 
 ### Invalid / NaN weights
 
-In `prepare`, any non-finite or non-positive balancing weight
-(`NaN`, `Inf`, `w <= 0`, i.e. the "bad bins" a balancing pass marks) is replaced
-with `1.0`, so that `count / (w1*w2)` for those bins falls back to the raw count
-rather than exploding. Bins that are unalignable / gap-covered can additionally
-be masked upstream. If the `.cool`/`.mcool` carries **no** weight column among
+In standard Cooler balancing and Juicer KR, a non-finite or non-positive weight
+(`NaN`, `Inf`, `w <= 0`) marks a bin that failed QC and is **masked**. `prepare`
+treats such bins as unusable: any contact pixel with either end on an invalid
+bin is **dropped** (it has no trustworthy balanced value and would otherwise
+contaminate the distance-stratified percentile ranking). The weight itself is
+given a finite placeholder internally only to avoid divide-by-zero on paths that
+never see those bins. Bins that are unalignable / gap-covered can additionally be
+masked upstream. If the `.cool`/`.mcool` carries **no** weight column among
 `KR/VC_SQRT/VC/weight`, `prepare` raises a `RuntimeError` instead of silently
 using raw counts.
 
@@ -595,23 +605,38 @@ flag, so its null varies run to run.)
 ## Writing `.hic` output with Juicer Tools
 
 `lift2matrix --format cool` needs no external tool. `--format hic` (or `both`)
-shells out to a `juicer_tools` executable on `PATH`:
+shells out to [Juicer Tools](https://github.com/aidenlab/juicer) (requires
+Java) to convert the reconstructed matrix to `.hic`.
+
+Coolsecture writes a temporary `<chrom>\t<size>` `chrom.sizes` and a contact
+list in Juicer's **short-with-score** format — five columns
+`chrom1 pos1 chrom2 pos2 value`, no strand/fragment fields — then runs
+`juicer_tools pre -r <resolution> <in.txt> <out.hic> <chrom.sizes>`. `pre`
+requires all records of one chromosome pair to be contiguous, so Coolsecture
+sorts the list by chromosome pair before writing; the values are 0-99
+percentile ranks.
+
+Provide the tool either as an executable named `juicer_tools` on `PATH`, or via
+`--juicer-tools` (which also accepts a full command):
 
 ```bash
-# obtain Juicer Tools (requires Java)
-wget https://s3.amazonaws.com/hicfiles.tc4ga.com/public/juicer/juicer_tools_1.22.01.jar
-echo 'exec java -jar /path/to/juicer_tools_1.22.01.jar "$@"' > juicer_tools
+# option A: wrapper script on PATH
+wget https://github.com/aidenlab/juicer/releases/download/JuicerTools-2.20.00/juicer_tools.2.20.00.jar
+printf '#!/bin/sh\nexec java -jar /path/to/juicer_tools.2.20.00.jar "$@"\n' > juicer_tools
 chmod +x juicer_tools && export PATH="$PWD:$PATH"
 
 coolsecture lift2matrix --liftover x.Merged.liftContacts --fadix a.fa.fai \
     --format hic --out-prefix step3/x
+
+# option B: pass the jar command directly
+coolsecture lift2matrix --liftover x.Merged.liftContacts --fadix a.fa.fai \
+    --format hic --out-prefix step3/x \
+    --juicer-tools "java -jar /path/to/juicer_tools.2.20.00.jar"
 ```
 
-Coolsecture writes a temporary `<chrom> <size>` `chrom.sizes` and a
-`chrom pos chrom pos value` contact list, then runs
-`juicer_tools pre -r <resolution> <in.txt> <out.hic> <chrom.sizes>`. Missing
-`juicer_tools` now exits non-zero with an explanatory error instead of failing
-silently.
+If Juicer Tools is missing or fails, `lift2matrix` exits non-zero with an
+explanatory error instead of silently reporting success. (Verified end-to-end
+with Juicer Tools 2.20.00.)
 
 ## Releases, CI, and tests
 
