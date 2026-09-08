@@ -6,9 +6,11 @@ contacts from one species' coordinate system into the other's and reports how
 well they agree.
 
 It builds on [C-InterSecture](https://github.com/NuriddinovMA/C-InterSecture)
-but is rebuilt around a CLI workflow, native `.cool`/`.mcool`/`.hic` input,
-multi-resolution runs, and a disk-spill path for matrices too large to fit
-in memory.
+but is rebuilt around a CLI workflow, native `.cool`/`.mcool`/`.hic` input, and
+multi-resolution runs. The memory-heavy contact-liftover and matrix-reconstruction
+stages (`liftcontacts`, `lift2matrix`) can spill intermediate tables to disk via
+`--spill-threshold-mb`/`--tmp-dir`; other stages still load their inputs normally,
+so a matrix that does not fit in RAM cannot be processed by every command.
 
 ## Changelog
 
@@ -54,7 +56,7 @@ cd Coolsecture
 python -m pip install -e .
 ```
 
-Optional extras (`.hic` reading, Plotly HTML, SCC-like stats):
+Optional extras (`.hic` reading, Plotly HTML, Spearman metric + KDE plotting):
 
 ```bash
 python -m pip install -e ".[hic]"
@@ -432,10 +434,211 @@ python -m pip install -e ".[viz]"
 The Snakemake examples target PDF outputs and may delete Plotly HTML to keep
 workflow outputs predictable.
 
+## File formats
+
+### `.link` (synteny, 6 columns; 0-based half-open)
+
+```text
+chromA  startA  endA  chromB  startB  endB
+```
+
+Columns 1-3 are always ascending on genome A. Columns 4-6 give the aligned
+interval on genome B: for a forward alignment `startB < endB`; for a reverse
+(strand `-`) alignment the B coordinates are emitted **swapped**, so
+`startB > endB` encodes the orientation. There is no separate strand column —
+the sign of `endB - startB` is the direction. (`asm2link` writes both the
+minimap2 PAF path and the mummer4 path this way; UCSC `.chain` carries strand
+explicitly and is converted by `link2mark`.)
+
+### `.mark` (densified synteny map, 8 columns)
+
+```text
+chromA  startA  endA  chromB  startB  endB  direction  block_id
+```
+
+Produced by `link2mark` from `.link`/`.chain`. Long collinear blocks are
+densified to `--step-len` spacing (default 150 bp segments, blocks shorter than
+`--thr-len` 300 bp kept whole). `direction` is `+1`/`-1` (orientation of the B
+interval); `-1` segments walk B backwards. `block_id` is the source block, with
+`<id>_gap` rows marking the spanned gap between adjacent blocks.
+
+### `.contacts.tsv` (prepared contacts, 14 columns)
+
+Written by `prepare` (one row per retained contact pixel):
+
+```text
+chrom1 start1 end1 bin1  chrom2 start2 end2 bin2  rank strict weak  cov1 cov2  dist_bins
+```
+
+- `rank`/`strict`/`weak` — percentile rank of the contact's normalized signal
+  within its distance stratum, on a **0-99** integer scale (`rank` is the
+  midpoint rank, `strict`/`weak` bracket it); 99 = strongest.
+- `cov1`/`cov2` — per-bin Hi-C read coverage (total normalized signal incident
+  on each bin); higher = better sampled.
+- `dist_bins` — genomic distance in bins; `-1` marks inter-chromosomal contacts.
+
+The companion `.stats.tsv` holds, per distance bin, `n`, `p05/p50/p95`, and 100
+tab-separated percentile quantiles (`p001`..`p100`).
+
+### `.liftContacts` (lifted contacts, 16 columns)
+
+```text
+chr1_observed pos1_observed chr2_observed pos2_observed
+remap1_target remap2_target
+observed_contacts target_contacts
+observed_deviations target_deviations
+observed_coverages_pos1 observed_coverages_pos2
+target_coverages_pos1 target_coverages_pos2
+target_contact_distances remapping_coverages
+```
+
+- `observed_*` are in the source genome; `target_*`/`remap*` are the liftover
+  onto the other genome.
+- `observed_contacts`/`target_contacts` are the 0-99 percentile ranks of the
+  source and target contacts.
+- `*_deviations` are coordinate spread (placement uncertainty) in bins.
+- `target_contact_distances` is the target-genome span in bins (`-1` =
+  inter-chromosomal).
+- `remapping_coverages` is the summed synteny weight (a 1:1 map is ~1.0; a
+  1-to-many map is diluted toward 0).
+
+## Normalization and the `balanced` model
+
+Two normalizations happen at **different stages** — do not confuse them:
+
+1. **Cooler matrix balancing** — in `prepare`. Pixel counts are balanced before
+   percentile ranking. Two weight conventions coexist and are handled
+   differently (hic2cool: *"cooler uses multiplicative weights and hic uses
+   divisive weights"*):
+   - `KR` / `VC_SQRT` / `VC` (Juicer `.hic`, hic2cool ≥ 0.5, 4DN) are **divisive**:
+     `val = count / (w1 * w2)`.
+   - `weight` (the standard `cooler balance` vector) is **multiplicative**:
+     `val = count * w1 * w2`; Coolsecture internally inverts it before the
+     division.
+
+   The weight column is picked by preference `KR > VC_SQRT > VC > weight`. Files
+   with no supported normalization vector cause `prepare` to raise an error
+   (there is no raw-count fallback).
+2. **Liftover `balanced` model** — in `liftcontacts`. When a source contact
+   maps through several synteny paths, the aggregated target quantities are
+   divided by the summed remapping weight `c[-3]` (= the
+   `remapping_coverages` column) to normalize for liftover ambiguity. `raw`
+   skips this division. **No Cooler weights are applied here** — they were
+   already consumed in `prepare`.
+
+### Invalid / NaN weights
+
+In `prepare`, any non-finite or non-positive balancing weight
+(`NaN`, `Inf`, `w <= 0`, i.e. the "bad bins" a balancing pass marks) is replaced
+with `1.0`, so that `count / (w1*w2)` for those bins falls back to the raw count
+rather than exploding. Bins that are unalignable / gap-covered can additionally
+be masked upstream. If the `.cool`/`.mcool` carries **no** weight column among
+`KR/VC_SQRT/VC/weight`, `prepare` raises a `RuntimeError` instead of silently
+using raw counts.
+
+## Metrics
+
+All scores compare the source percentile rank against the target rank for
+lifted contacts; the randomized null shuffles the target percentile rank across
+contacts (no cross-species correlation).
+
+- **P-BAD** (percentile-based Bhattacharyya-like divergence), evaluated in a
+  `±frame` bin window around each locus. For contact pair with source rank
+  `p1` and target rank `p2`:
+
+  ```text
+  dp      = |p1 - p2| / 100
+  ds(p)   = clamp(1 - |p - 50|/50, 0.01, 0.99)        # rank confidence
+  P-BAD   = mean over window pairs of [ -dp * log10(ds(p1) * ds(p2)) ]
+  ```
+
+  The window is scored only when it contains more than `frame²` contacts.
+  Higher P-BAD = stronger divergence. `metric --metric` also offers `log`,
+  `stripe`, `pearsone`, `spearman` (the last needs the `[stats]` extra).
+
+- **SCC-like** (`similarity`) — a HiCRep-inspired stratum-adjusted
+  correlation. Matrices are split into genomic-distance strata; a Pearson
+  correlation is computed per stratum and aggregated as a weighted mean with
+  stratum pixel counts as weights:
+
+  ```text
+  SCC-like = Σ_d (n_d · r_d) / Σ_d n_d
+  ```
+
+  This is a **simplified** SCC-like statistic: it does not apply HiCRep's 2-D
+  stratum smoothing or inverse-variance weights. Outputs are `.scc-like.tsv`
+  (per-stratum `r`, `n`), `.scc-like.summary.tsv`, and `.scc-like.<fmt>`.
+
+- **Multiscale stability** (`multiscale`) — P-BAD is recomputed across
+  resolutions; for per-resolution mean P-BAD `m_r`:
+
+  ```text
+  stability = 1 - std(m_r) / (|mean(m_r)| + 1e-9)
+  ```
+
+  near 1 = stable across resolutions. It also reports the fraction of contacts
+  with P-BAD above `--pbad-thr` and coarse/fine conservation flags.
+
+## Reproducing the randomized figures
+
+The observed-vs-randomized diagnostics shuffle the target percentile ranks.
+Pass an explicit RNG seed to make a run reproducible:
+
+```bash
+coolsecture contact-stat ... --seed 20260329
+```
+
+(`contact-stat` exposes `--seed`; the null uses `np.random.seed`. The `metric`
+observed-vs-random panel uses the same shuffle but currently has no `--seed`
+flag, so its null varies run to run.)
+
+## Writing `.hic` output with Juicer Tools
+
+`lift2matrix --format cool` needs no external tool. `--format hic` (or `both`)
+shells out to a `juicer_tools` executable on `PATH`:
+
+```bash
+# obtain Juicer Tools (requires Java)
+wget https://s3.amazonaws.com/hicfiles.tc4ga.com/public/juicer/juicer_tools_1.22.01.jar
+echo 'exec java -jar /path/to/juicer_tools_1.22.01.jar "$@"' > juicer_tools
+chmod +x juicer_tools && export PATH="$PWD:$PATH"
+
+coolsecture lift2matrix --liftover x.Merged.liftContacts --fadix a.fa.fai \
+    --format hic --out-prefix step3/x
+```
+
+Coolsecture writes a temporary `<chrom> <size>` `chrom.sizes` and a
+`chrom pos chrom pos value` contact list, then runs
+`juicer_tools pre -r <resolution> <in.txt> <out.hic> <chrom.sizes>`. Missing
+`juicer_tools` now exits non-zero with an explanatory error instead of failing
+silently.
+
+## Releases, CI, and tests
+
+- Software version: see `pyproject.toml` (currently **0.3.5**); released tags
+  are published on the GitHub repository.
+- CI (`.github/workflows/ci.yml`) runs on every push/PR: installs the package
+  on Python 3.10, runs `python -m compileall src`, and checks
+  `python -m coolsecture -h`.
+- There is no formal test suite checked in yet; the Snakemake examples
+  (`example1/`, `example2/`) double as end-to-end integration runs.
+
 ## Citation
 
-If you use Coolsecture in your research, please cite this repository:
+If you use Coolsecture in your research, please cite the paper and the software
+release. Fill in the bibliographic details from the published version:
+
+```text
+# Peer-reviewed paper (TODO: confirm authors / title / journal / year / DOI)
+<Authors>. Coolsecture: <full paper title>. <Journal> (<Year>). doi: <DOI>
+
+# Software release (version + archive DOI)
+Coolsecture v0.3.5, <Authors>. Zenodo/Figshare archive, doi: <archive DOI>
+```
+
+The repository itself may also be cited as:
 
 ```text
 Coolsecture: an easy-to-use framework for cross-species Hi-C contact map comparison.
+https://github.com/pk-zhu/Coolsecture
 ```
