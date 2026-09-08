@@ -71,7 +71,9 @@ def main():
                         ys = h
                     ax.plot(xs, ys, linestyle='--', linewidth=1.8, label="random")
 
-                ax.set_xlabel(f"{args.metric} score (frame={frame})")
+                metric_labels = {"pbad": "P-BAD", "log": "log", "stripe": "stripe",
+                                 "pearsone": "Pearson r", "spearman": "Spearman rho"}
+                ax.set_xlabel(f"{metric_labels.get(args.metric, args.metric)} score (frame={frame})")
                 ax.set_ylabel("density")
                 ax.legend(frameon=False)
 
