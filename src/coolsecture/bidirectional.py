@@ -579,12 +579,12 @@ def main():
         help=("Rule for retaining one contact when a source contact maps to multiple separated target groups. "
               "The kept contact goes to .liftContacts and the losing alternatives to .discarded_dups.tsv "
               "(never silently dropped). Each rule picks the more RELIABLE target placement: "
-              "deviation = smallest target-coordinate spread (tightest placement); "
+              "deviation = smallest target percentile-rank uncertainty (tightest rank vs its strict/weak bounds); "
               "length = shortest target contact distance, with intra-chromosomal always preferred over "
               "inter-chromosomal (a genomic distance on target, NOT an alignment length); "
               "coverage = highest joint Hi-C read depth of the two target bins (best-sampled anchors); "
               "default = highest summed remapping weight (most uniquely/confidently mapped placement); "
-              "none = no comparison, keep the first/primary candidate and route all later alternatives to .discarded_dups.tsv. "
+              "none = no ranking; keep whichever candidate is encountered first during iteration (no biological primary), routing later alternatives to .discarded_dups.tsv. "
               "Ties keep the first candidate."))
     p.add_argument("--model", choices=['balanced','raw'], default='raw',
         help=("Normalization model for lifted contacts: balanced divides the aggregated observed/target "

@@ -86,7 +86,7 @@ def parse_resolution_arg(s: str):
             raise RuntimeError(f"Invalid resolution in --resolution: {item}") from e
     return out
 
-def load_bins_arrays(clr: cooler.Cooler) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_bins_arrays(clr: cooler.Cooler) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     bins = clr.bins()[:]
     chroms = bins["chrom"].to_numpy(object, copy=False)
     starts = bins["start"].to_numpy(np.int64, copy=False)
@@ -108,9 +108,15 @@ def load_bins_arrays(clr: cooler.Cooler) -> Tuple[np.ndarray, np.ndarray, np.nda
     # 使用第一个找到的归一化向量
     norm_col = norm_cols[0]
     raw = bins[norm_col].to_numpy(np.float32, copy=True)
-    # 坏 bin（平衡时标记为 NaN/Inf/<=0）回退为原始计数：先把无效权重置 1.0
-    invalid = ~np.isfinite(raw) | (raw <= 0)
-    raw[invalid] = 1.0
+    # 在 cooler balance / Juicer KR 中，NaN、非有限或非正权重表示该 bin 未通过
+    # QC、被屏蔽（filtered bin）。这类 bin 的归一化值不可信，应整条剔除涉及它
+    # 的像素，而不是把权重当作 1.0 回退成原始计数混进百分位排序。
+    valid_bins = np.isfinite(raw) & (raw > 0)
+    # 下游统一按 count / (f1*f2) 计算；有效 bin 的权重才参与。无效 bin 不会出
+    # 现在保留的像素里（见 compute_values_for_chunk 的 valid_bins 掩码），这里
+    # 仅给个有限占位以防任何越界/残留路径除零。
+    raw = raw.copy()
+    raw[~valid_bins] = 1.0
 
     # 两种归一化约定（hic2cool_updates: "cooler uses multiplicative weights
     # and hic uses divisive weights"）：
@@ -125,7 +131,7 @@ def load_bins_arrays(clr: cooler.Cooler) -> Tuple[np.ndarray, np.ndarray, np.nda
         weights = raw
     else:  # 'weight' — cooler multiplicative balancing weight
         weights = 1.0 / raw
-    return chroms, starts, ends, weights
+    return chroms, starts, ends, weights, valid_bins
 
 def iter_pixels_chunks(clr: cooler.Cooler, chunksize: int):
     nnz = int(clr.info["nnz"])
@@ -154,7 +160,8 @@ def compute_values_for_chunk(df: pd.DataFrame,
                              weights: np.ndarray,
                              resolution: int,
                              max_distance_bp: int,
-                             keep_inter: bool):
+                             keep_inter: bool,
+                             valid_bins: np.ndarray = None):
     i = df["bin1_id"].to_numpy(np.int32, copy=False)
     j = df["bin2_id"].to_numpy(np.int32, copy=False)
     c = df["count"].to_numpy(np.float32, copy=False)
@@ -165,6 +172,10 @@ def compute_values_for_chunk(df: pd.DataFrame,
         mask = keep_intra | (~is_intra)
     else:
         mask = keep_intra
+    # Drop any pixel touching a bin whose normalization weight is NaN/<=0
+    # (a masked/QC-failed bin); such pixels have no trustworthy balanced value.
+    if valid_bins is not None:
+        mask = mask & valid_bins[i] & valid_bins[j]
     if not mask.any():
         return None
     i = i[mask]; j = j[mask]; c = c[mask]
@@ -198,12 +209,13 @@ def first_pass_build(tmpdir: Path,
                      chunksize: int,
                      max_distance_bp: int,
                      keep_inter: bool,
-                     n_bins: int) -> Tuple[int, set, np.ndarray]:
+                     n_bins: int,
+                     valid_bins: np.ndarray = None) -> Tuple[int, set, np.ndarray]:
     keys_seen: set = set()
     res = int(clr.binsize)
     coverage = np.zeros(n_bins, dtype=np.float64)
     for df in iter_pixels_chunks(clr, chunksize):
-        out = compute_values_for_chunk(df, chroms, starts, ends, weights, res, max_distance_bp, keep_inter)
+        out = compute_values_for_chunk(df, chroms, starts, ends, weights, res, max_distance_bp, keep_inter, valid_bins)
         if out is None:
             continue
         dist_bins, s_idx, e_idx, i, j, c, val, low, high = out
@@ -317,13 +329,13 @@ def main():
         clr = cooler.Cooler(cooler_path)
         if clr.binsize is None:
             raise RuntimeError("Input cooler must have fixed bin size; use mcool path with ::resolutions/RES")
-        chroms, starts, ends, weights = load_bins_arrays(clr)
+        chroms, starts, ends, weights, valid_bins = load_bins_arrays(clr)
         n_bins = len(chroms)
         nnz = int(clr.info.get("nnz", 0))
         raw_sum = float(clr.info.get("sum", 0.0))
         tmpdir = Path(str(out_pref) + ".tmp")
         tmpdir.mkdir(parents=True, exist_ok=True)
-        res, keys_seen, coverage = first_pass_build(tmpdir, clr, chroms, starts, ends, weights, a.chunksize, a.max_distance, a.inter, n_bins)
+        res, keys_seen, coverage = first_pass_build(tmpdir, clr, chroms, starts, ends, weights, a.chunksize, a.max_distance, a.inter, n_bins, valid_bins)
         coverage_total = float(np.sum(coverage))
         covered_bins = int(np.count_nonzero(coverage > 0))
         genome_bp = int(n_bins * clr.binsize)

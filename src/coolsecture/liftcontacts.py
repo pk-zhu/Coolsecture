@@ -646,18 +646,22 @@ def choose_best(writed: Tuple, dupled: Tuple, crit: str) -> bool:
     Both candidates share the same source coordinates and differ only in where
     they land on the target genome; exactly one is retained. Returning True
     keeps ``writed`` (and routes ``dupled`` to .discarded_dups.tsv); returning
-    False replaces the kept contact with ``dupled``. Ties keep the first/primary
-    candidate.
+    False replaces the kept contact with ``dupled``. Ties keep the candidate
+    encountered first during iteration.
 
     Field semantics (to_write tuple):
-      [5]  target_deviations        - target-coordinate spread; smaller = tighter
+      [5]  target_deviations        - percentile-rank uncertainty of the target
+                                      contact: spread of its rank vs the
+                                      strict/weak rank bounds (NOT a genomic-
+                                      coordinate spread); smaller = tighter rank
       [8]  target_coverages_pos1    - Hi-C read depth of target bin 1; higher = better sampled
       [9]  target_coverages_pos2    - Hi-C read depth of target bin 2; higher = better sampled
       [10] target_contact_distances - target genomic span in bins (-1 = inter-chromosomal)
       [11] remapping_coverages      - summed liftover weight; higher = more unique/confident map
     """
     if crit == 'deviation':
-        # Most precise target placement: minimize spread.
+        # Minimize the target contact's percentile-rank uncertainty (tightest
+        # rank relative to its strict/weak bounds).
         return writed[5] <= dupled[5]
     if crit == 'length':
         # Short-range target contacts are intrinsically stronger; intra always
@@ -676,7 +680,10 @@ def choose_best(writed: Tuple, dupled: Tuple, crit: str) -> bool:
         # (a contact is only as reliable as its two target bins).
         return (writed[8] * writed[9]) >= (dupled[8] * dupled[9])
     if crit == 'none':
-        # No comparison: keep the first/primary candidate.
+        # No ranking at all: always keep the candidate already stored, i.e. the
+        # first one encountered during iteration (dict insertion order). There is
+        # no biological notion of a "primary" mapping; later candidates are
+        # routed to .discarded_dups.tsv purely by arrival order.
         return True
     # default ('remapping'): most uniquely/confidently mapped placement wins,
     # i.e. MAXIMIZE the summed remapping weight (1:1 maps are heavy, 1:many dilute).
@@ -1722,13 +1729,14 @@ def main():
         help=('Rule for retaining one contact when a source contact maps to multiple separated target groups. '
               'The kept contact goes to .liftContacts and the losing alternatives to .discarded_dups.tsv '
               '(never silently dropped). Each rule picks the more RELIABLE target placement: '
-              'deviation = smallest target-coordinate spread (tightest placement); '
+              'deviation = smallest target percentile-rank uncertainty (tightest rank vs its strict/weak bounds); '
               'length = shortest target contact distance, with intra-chromosomal always preferred over '
               'inter-chromosomal (a genomic distance on target, NOT an alignment length); '
               'coverage = highest joint Hi-C read depth of the two target bins (best-sampled anchors); '
               'default = highest summed remapping weight (most uniquely/confidently mapped placement); '
-              'none = no comparison, keep the first/primary candidate and route all later alternatives to .discarded_dups.tsv. '
-              'Ties keep the first candidate.'))
+              'none = no ranking; keep whichever candidate is encountered first during iteration '
+              '(no biological primary), routing later alternatives to .discarded_dups.tsv. '
+              'Ties keep the candidate encountered first.'))
     p.add_argument('--model', choices=['balanced','raw'], default='raw',
         help=('Normalization model for lifted contacts: balanced divides aggregated contact values by the '
               'summed remapping-coverage weight (c[-3]) to normalize for liftover coverage/ambiguity; raw '
