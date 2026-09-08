@@ -2,6 +2,7 @@
 import argparse
 import os
 import re
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -46,14 +47,28 @@ def _resolve_liftover_inputs(liftover: str, liftover_prefix: str) -> List[Tuple[
 
 
 def _write_juicer_input(path: str, contacts: dict, res: int, which: str):
+    # Juicer `pre` (short-with-score, no fragment map) accepts 5 columns
+    # (chrom1 pos1 chrom2 pos2 value) but REQUIRES all records of one
+    # chromosome-pair block to be contiguous in the file; otherwise it aborts
+    # with "the chromosome combination X_Y appears in multiple blocks".
+    # Iterating the contacts dict follows source-coordinate order, which
+    # interleaves chromosome pairs on real multi-chromosome data, so we collect
+    # and sort by (chrom pair, position) to keep each block contiguous.
     idx = 0 if which == "observed" else 1
+    rows = []
+    for (c1, b1, c2, b2), vals in contacts.items():
+        v = float(vals[idx])
+        if v <= 0:
+            continue
+        p1 = int(b1) * res
+        p2 = int(b2) * res
+        if (c1, p1) <= (c2, p2):
+            rows.append((c1, p1, c2, p2, v))
+        else:
+            rows.append((c2, p2, c1, p1, v))
+    rows.sort(key=lambda r: (r[0], r[2], r[1], r[3]))
     with open(path, "w") as f:
-        for (c1, b1, c2, b2), vals in contacts.items():
-            v = float(vals[idx])
-            if v <= 0:
-                continue
-            p1 = int(b1) * res
-            p2 = int(b2) * res
+        for c1, p1, c2, p2, v in rows:
             f.write(f"{c1}\t{p1}\t{c2}\t{p2}\t{v}\n")
 
 
@@ -92,11 +107,19 @@ def _write_chrom_name_map(path: str, mapping: dict):
 
 
 def _run_juicer_tools(juicer_tools: str, in_txt: str, out_hic: str, chrom_sizes: str, res: int):
-    cmd = [juicer_tools, "pre", "-r", str(res), in_txt, out_hic, chrom_sizes]
+    # `juicer_tools` may be a bare executable name on PATH or a full command
+    # prefix such as "java -jar /path/to/juicer_tools.jar"; shlex-split it.
+    base = shlex.split(juicer_tools)
+    if not base:
+        raise RuntimeError("--juicer-tools is empty.")
+    cmd = base + ["pre", "-r", str(res), in_txt, out_hic, chrom_sizes]
     try:
         subprocess.run(cmd, check=True)
     except FileNotFoundError as e:
-        raise RuntimeError("juicer_tools not found; required for .hic output.") from e
+        raise RuntimeError(
+            f"Juicer Tools not found ('{juicer_tools}'); required for .hic output. "
+            "Install it and pass --juicer-tools (executable on PATH, or 'java -jar /path/juicer_tools.jar')."
+        ) from e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"juicer_tools failed (exit={e.returncode}). Command: {' '.join(cmd)}") from e
 
@@ -263,9 +286,13 @@ def _write_cool_from_sqlite(
 
 
 def _write_juicer_input_from_sqlite(path: str, conn: sqlite3.Connection, res: int, which: str):
+    # c1/b1/c2/b2 are already stored canonicalized (lower bin first, i<j).
+    # Order by chromosome pair (then position) so each chromosome-pair block is
+    # contiguous -- juicer `pre` requires that; ORDER BY i,j interleaves
+    # intra/inter rows per i and splits blocks across the file.
     col = "obs" if which == "observed" else "tgt"
     with open(path, "w", buffering=1024 * 1024) as f:
-        cur = conn.execute(f"SELECT c1, b1, c2, b2, {col} FROM contacts ORDER BY i, j")
+        cur = conn.execute(f"SELECT c1, b1, c2, b2, {col} FROM contacts ORDER BY c1, c2, b1, b2")
         for c1, b1, c2, b2, v in cur:
             v = float(v)
             if v <= 0:
@@ -383,7 +410,11 @@ def main():
     p.add_argument("--fadix", required=True, help="Path to FASTA index (.fai) file")
     p.add_argument("--assembly", help="Value for Cooler 'assembly' metadata (e.g., 'TAIR10'); optional")
     p.add_argument("--format", default="cool", choices=["cool", "hic", "both"],
-        help="Output format; 'hic'/'both' additionally shell out to a 'juicer_tools' executable on PATH to write the .hic file")
+        help="Output format; 'hic'/'both' additionally shell out to Juicer Tools to write the .hic file")
+    p.add_argument("--juicer-tools", default="juicer_tools",
+        help=("Command used to invoke Juicer Tools for .hic output. Either an executable on PATH "
+              "(default 'juicer_tools') or a full command prefix, e.g. "
+              "'java -jar /path/to/juicer_tools.2.20.00.jar'."))
     p.add_argument("--tmp-dir", help="Directory for temporary spill files")
     p.add_argument(
         "--spill-threshold-mb",
@@ -404,7 +435,7 @@ def main():
                 args.fadix,
                 args.assembly,
                 args.format,
-                "juicer_tools",
+                args.juicer_tools,
                 args.tmp_dir,
                 args.spill_threshold_mb,
             )
@@ -415,8 +446,9 @@ def main():
         sys.stderr.write(f"[ERROR] lift2matrix failed: {e}\n")
         if str(args.format) in ("hic", "both"):
             sys.stderr.write(
-                "[ERROR] Writing .hic requires the 'juicer_tools' executable on PATH "
-                "(use --format cool to write only .cool matrices).\n"
+                "[ERROR] Writing .hic requires Juicer Tools: put a 'juicer_tools' executable on PATH "
+                "or pass --juicer-tools (e.g. --juicer-tools 'java -jar /path/to/juicer_tools.jar'). "
+                "Use --format cool to write only .cool matrices.\n"
             )
         sys.exit(1)
     sys.exit(0)

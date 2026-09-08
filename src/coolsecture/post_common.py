@@ -673,7 +673,9 @@ def _pixels_from_contacts(contacts: dict, resolution: int, chr_sizes: dict, whic
 def _write_cool_minimal(path, bins_df, px_df, assembly=None):
     import h5py
     import os
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    out_dir = os.path.dirname(path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     from cooler import create_cooler
     if not px_df.empty:
         create_cooler(
