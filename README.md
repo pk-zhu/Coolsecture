@@ -1,54 +1,23 @@
 # Coolsecture
 
-Coolsecture compares Hi-C contact maps across species. Given two genome
-assemblies, a synteny map between them, and a Hi-C matrix for each, it lifts
-contacts from one species' coordinate system into the other's and reports how
-well they agree.
+Coolsecture compares Hi-C contact maps across species. Given two genome assemblies, a synteny map, and one Hi-C matrix per species, it lifts contacts between coordinate systems and measures cross-species agreement.
 
-It builds on [C-InterSecture](https://github.com/NuriddinovMA/C-InterSecture)
-but is rebuilt around a CLI workflow, native `.cool`/`.mcool`/`.hic` input, and
-multi-resolution runs. The memory-heavy contact-liftover and matrix-reconstruction
-stages (`liftcontacts`, `lift2matrix`) can spill intermediate tables to disk via
-`--spill-threshold-mb`/`--tmp-dir`; other stages still load their inputs normally,
-so a matrix that does not fit in RAM cannot be processed by every command.
+Coolsecture builds on [C-InterSecture](https://github.com/NuriddinovMA/C-InterSecture) with a CLI-based workflow, native `.cool`/`.mcool`/`.hic` support, multi-resolution analysis, and lower-memory contact liftover. The `liftcontacts` and `lift2matrix` steps can spill intermediate tables to disk with `--spill-threshold-mb` and `--tmp-dir`; other commands still load their main inputs into memory.
 
-## Changelog
+## Main features
 
-### v0.3.5 - 2026-07-06
-
-- `asm2link` can now use mummer4 (`-a mummer4`; nucmer + delta-filter +
-  show-coords) in addition to minimap2. minimap2 stays the default.
-- New `--mummer-filter {1-to-1,mutual-best,none}` (default `1-to-1`) and
-  `--mummer-min-idy` / `--mummer-min-len` for filtering mummer4 alignments.
-- `run-all` gained `--asm-aligner` and `--asm-mummer-filter` to forward.
-- Help text fixes: `prepare` prog name, `liftcontacts --contact-a` extension,
-  missing descriptions for `--dups-filter` / `--model`, duplicated
-  `(default: auto)` on several `--interactive` flags.
-
-### v0.3.2 - 2026-06-14
-
-- Set publication-ready static plots to use editable PDF/SVG text with Carlito-preferred fonts.
-- Added multi-resolution `.hic` support in `prepare` and `run-all`.
-- Added chromosome-name mapping output when liftover matrix generation uses aliases.
-- Added `run-all --auto` parameter selection with `auto_params.tsv` reporting.
-- Added automatic `plot-cross` region selection for top differential/conserved 2 Mb PBAD-ranked regions.
-
-## Main Features
-
-- Align assemblies into syntenic links with `minimap2` or `mummer4`.
-- Convert `.link` or UCSC `.chain` into Coolsecture's `.mark` synteny format.
-- Turn `.cool` / `.mcool` / `.hic` matrices into distance-stratified
-  percentile-ranked contact tables.
-- Lift contacts A→B and B→A, then summarize reciprocal consistency.
-- Reconstruct observed/target `.cool` or `.hic` matrices from lifted contacts.
-- PBAD and related metrics, diagnostic plots, split-triangle cross plots,
-  HiCRep-inspired SCC-like similarity score.
-- Run command-by-command, through `run-all`, or via the example Snakemake
-  workflows.
+- Assembly alignment with `minimap2` or `mummer4`.
+- Conversion of `.link` or UCSC `.chain` files to Coolsecture `.mark` format.
+- Contact ranking from `.cool`, `.mcool`, and `.hic` matrices.
+- Bidirectional contact liftover and reciprocal consistency summaries.
+- Reconstruction of observed/target `.cool` or `.hic` matrices.
+- PBAD and related metrics, diagnostic plots, and split-triangle cross-species heatmaps.
+- HiCRep-inspired SCC-like similarity scoring.
+- Command-by-command execution, `run-all`, and example Snakemake workflows.
 
 ## Installation
 
-Needs Python 3.8+.
+Requires Python 3.8+.
 
 ```bash
 git clone https://github.com/pk-zhu/Coolsecture.git
@@ -56,71 +25,65 @@ cd Coolsecture
 python -m pip install -e .
 ```
 
-Optional extras (`.hic` reading, Plotly HTML, Spearman metric + KDE plotting):
+Optional extras:
 
 ```bash
-python -m pip install -e ".[hic]"
-python -m pip install -e ".[viz]"
-python -m pip install -e ".[stats]"
+python -m pip install -e ".[hic]"    # .hic input
+python -m pip install -e ".[viz]"    # Plotly HTML
+python -m pip install -e ".[stats]"  # Spearman metric + KDE plotting
 ```
 
 External tools:
 
-- `minimap2` — used by `asm2link` and `run-all` (default aligner).
-- `mummer4` (`nucmer`, `delta-filter`, `show-coords`) — only if you pass
-  `-a mummer4` / `--asm-aligner mummer4`.
-- `samtools` — optional; `run-all` can write a minimal `.fai` itself if
-  `samtools faidx` is missing.
-- `juicer_tools` — only for `lift2matrix --format hic` or `--format both`.
-- `snakemake` — only for the example workflows.
+- `minimap2` — default aligner for `asm2link` and `run-all`.
+- `mummer4` (`nucmer`, `delta-filter`, `show-coords`) — required only with `-a mummer4` / `--asm-aligner mummer4`.
+- `samtools` — optional; `run-all` can create a minimal `.fai` if `samtools faidx` is unavailable.
+- `juicer_tools` — required only for `lift2matrix --format hic` or `--format both`.
+- `snakemake` — required only for the example workflows.
 
-## Command Overview
+## Command overview
 
 ```bash
 coolsecture -h
 coolsecture <command> -h
 ```
 
-Available commands:
-
 | Command | Purpose |
 | --- | --- |
-| `asm2link` | Align two assemblies with minimap2 or mummer4 and write `.paf` plus six-column `.link`. |
-| `link2mark` | Convert `.link` or UCSC `.chain` synteny files to `.mark`. |
+| `asm2link` | Align two assemblies and write `.paf` plus six-column `.link`. |
+| `link2mark` | Convert `.link` or UCSC `.chain` files to `.mark`. |
 | `prepare` | Convert `.cool`, `.mcool`, or `.hic` to ranked contact tables. |
 | `roughlift` | Roughly lift a BED track for quick synteny QA. |
-| `liftcontacts` | Run A->B and B->A contact liftover and reciprocal summaries. (`liftcontracts` is a deprecated alias.) |
-| `contact-stat` | Plot percentile, distance, and ratio diagnostics from lifted contacts. |
+| `liftcontacts` | Run A→B and B→A contact liftover and reciprocal summaries. (`liftcontracts` is a deprecated alias.) |
+| `contact-stat` | Plot percentile, distance, and ratio diagnostics. |
 | `metric` | Compute PBAD and related metrics as bedGraph plus figures. |
 | `lift2matrix` | Convert lifted contacts to observed/target `.cool` or `.hic` matrices. |
-| `plot-cross` | Draw split-triangle cross-species heatmaps for a locus. |
-| `multiscale` | Summarize PBAD stability across multiple resolutions. |
-| `similarity` | Compute stratum-adjusted correlation (HiCRep-inspired SCC-like similarity score) between matched matrices. |
-| `run-all` | Run the main end-to-end pipeline from FASTA and matrices. |
+| `plot-cross` | Draw split-triangle cross-species heatmaps. |
+| `multiscale` | Summarize PBAD stability across resolutions. |
+| `similarity` | Compute a HiCRep-inspired SCC-like similarity score. |
+| `run-all` | Run the main end-to-end workflow. |
 
-Note: in the current CLI, FASTA index arguments are named `--fadix`,
-`--fadix-a`, and `--fadix-b`.
+> In the current CLI, FASTA index arguments are named `--fadix`, `--fadix-a`, and `--fadix-b`.
 
 ## Inputs
 
 You need:
 
-- A FASTA and `.fai` for each species (A and B).
-- A Hi-C matrix for each, in `.cool`, `.mcool`, or `.hic`.
-- A synteny file: a six-column `.link` (from `asm2link`) or a UCSC `.chain`.
+- FASTA and `.fai` files for both species.
+- One Hi-C matrix per species in `.cool`, `.mcool`, or `.hic` format.
+- A synteny file: six-column `.link` or UCSC `.chain`.
 
-`.link` format (0-based half-open, same as PAF):
+`.link` format (0-based, half-open):
 
 ```text
 chromA  startA  endA  chromB  startB  endB
 ```
 
-For `.cool` / `.mcool`, the bins table must carry at least one normalization
-vector among `KR`, `VC_SQRT`, `VC`, or `weight`.
+For `.cool` / `.mcool`, the bins table must contain at least one normalization vector among `KR`, `VC_SQRT`, `VC`, or `weight`.
 
-## Quick Start: End-to-End
+## Quick start
 
-`run-all` chains the full pipeline, including alignment, mark generation, contact preparation, bidirectional lift-over, diagnostic statistics, metrics, matrix reconstruction, similarity scoring, and automatic regional plot-cross visualization.
+`run-all` performs assembly alignment, mark generation, contact preparation, bidirectional liftover, diagnostics, metric calculation, matrix reconstruction, similarity scoring, and automatic `plot-cross` region selection.
 
 ```bash
 coolsecture run-all \
@@ -134,7 +97,7 @@ coolsecture run-all \
   --out-prefix run_all
 ```
 
-Extra arguments can be passed through to individual steps:
+Arguments can be forwarded to individual steps:
 
 ```bash
 coolsecture run-all \
@@ -151,10 +114,7 @@ coolsecture run-all \
   --out-prefix run_all
 ```
 
-For `.hic` input, install the `hic` extra and pass resolution(s) via
-`--resolution` (a single value for `run-all`; the standalone `prepare` also
-accepts comma-separated values, e.g. `--resolution 40000,100000`, for
-multi-resolution `.hic`):
+For `.hic` input:
 
 ```bash
 python -m pip install -e ".[hic]"
@@ -170,7 +130,9 @@ coolsecture run-all \
   --out-prefix run_all_hic
 ```
 
-## Step-by-Step Workflow
+`run-all` accepts one resolution. Standalone `prepare` also supports comma-separated resolutions for `.hic`, for example `--resolution 40000,100000`.
+
+## Step-by-step workflow
 
 ### 1. Build a link file from assemblies
 
@@ -184,8 +146,7 @@ coolsecture asm2link \
   --out-prefix step0/Asu_Ath
 ```
 
-mummer4 (more precise on divergent assemblies; emits 1-to-1 syntenic
-alignments by default):
+mummer4:
 
 ```bash
 coolsecture asm2link \
@@ -196,22 +157,21 @@ coolsecture asm2link \
   --out-prefix step0/Asu_Ath
 ```
 
-minimap2 produces:
+minimap2 outputs:
 
 - `step0/Asu_Ath.paf`
 - `step0/Asu_Ath.link`
 
-mummer4 produces:
+mummer4 outputs:
 
-- `step0/Asu_Ath.delta` — raw nucmer output
-- `step0/Asu_Ath.filter.delta` — after `delta-filter` (skipped when
-  `--mummer-filter none`)
-- `step0/Asu_Ath.coords.tsv` — `show-coords -T -H` tabular output
+- `step0/Asu_Ath.delta`
+- `step0/Asu_Ath.filter.delta` (omitted with `--mummer-filter none`)
+- `step0/Asu_Ath.coords.tsv`
 - `step0/Asu_Ath.link`
 
-If you already have a UCSC `.chain`, skip this step and feed it to `link2mark`.
+If you already have a UCSC `.chain`, skip this step.
 
-### 2. Convert synteny to a mark file
+### 2. Convert synteny to `.mark`
 
 From `.link`:
 
@@ -278,9 +238,14 @@ Main outputs:
 
 - `*.contacts.tsv`
 - `*.stats.tsv`
-- `*.r<resolution>.contacts.tsv` and `*.r<resolution>.stats.tsv` in
-  multi-resolution mode
-- `*.multi_resolution.summary.tsv` and `.pdf` when `--summary` is used
+- `*.r<resolution>.contacts.tsv` and `*.r<resolution>.stats.tsv` in multi-resolution mode
+- `*.multi_resolution.summary.tsv` and `.pdf` with `--summary`
+
+Before ranking, counts are normalized using the first available vector in this order:
+
+`KR > VC_SQRT > VC > weight`
+
+`KR`/`VC`-type vectors are divisive; Cooler `weight` is multiplicative. Contacts touching bins with missing or non-positive weights are removed. Matrices without a supported weight column are rejected.
 
 ### 4. Run bidirectional contact liftover
 
@@ -298,7 +263,7 @@ coolsecture liftcontacts \
   --out-prefix step2/Asu_Ath/Asu_Ath.r40000
 ```
 
-Useful options for larger files:
+For larger files:
 
 ```bash
 --tmp-dir .snakemake/tmp/liftcontracts
@@ -315,6 +280,8 @@ Main outputs:
 - `*.Merged.liftContacts`
 - `*.bidirectional.summary.tsv`
 - `*.bidirectional.tags.tsv` unless `--no-tags` is used
+
+`--model balanced` divides aggregated values by summed synteny remapping weight. `--model raw` skips this adjustment. When one source contact maps to multiple target positions, `--dups-filter` controls which mapping is retained; discarded mappings are written to `.discarded_dups.tsv`.
 
 ### 5. Generate diagnostic plots
 
@@ -337,6 +304,8 @@ Outputs:
 - `*.distance_heatmap.pdf`
 - `*.ratio_scatter.pdf`
 
+The randomized null is generated by shuffling target percentile ranks. Use `--seed <int>` for reproducibility.
+
 ### 6. Compute metrics
 
 ```bash
@@ -354,8 +323,9 @@ Outputs:
 - `*.pbad.8frame.bedGraph`
 - `*.pbad.8frame.stat.pdf`
 
-Supported `--metric` values are `pbad`, `log`, `stripe`, `pearsone`, and
-`spearman`.
+Supported metrics: `pbad`, `log`, `stripe`, `pearsone`, and `spearman`. `spearman` requires the `[stats]` extra.
+
+P-BAD is a windowed divergence between source and target percentile ranks. The PDF compares the observed distribution with the randomized null.
 
 ### 7. Reconstruct observed/target matrices
 
@@ -372,7 +342,13 @@ Outputs:
 - `*.Observed.cool`
 - `*.Target.cool`
 
-Use `--format hic` or `--format both` if `juicer_tools` is available.
+Use `--format hic` or `--format both` to also write `.hic`. This requires Juicer Tools on `PATH`, or:
+
+```bash
+--juicer-tools "java -jar /path/to/juicer_tools.jar"
+```
+
+Matrix values are 0–99 percentile ranks in source coordinates.
 
 ### 8. Compute matrix similarity
 
@@ -391,6 +367,10 @@ Outputs:
 - `*.scc-like.summary.tsv`
 - `*.scc-like.pdf`
 
+The score is a Pearson correlation computed within genomic-distance strata and averaged using stratum pixel counts as weights. Because it does not include HiCRep's 2-D smoothing step, it is reported as **SCC-like** rather than SCC.
+
+`multiscale` separately summarizes PBAD stability across resolutions.
+
 ### 9. Plot a cross-species locus
 
 ```bash
@@ -403,88 +383,78 @@ coolsecture plot-cross \
   --out-prefix step3/Asu_Ath.r40000
 ```
 
-## Snakemake Examples
+## Snakemake examples
 
-Two workflow templates ship with the repo:
+Two workflow templates are included:
 
-- `example1/` — plant example, `.mcool` + `.link`.
-- `example2/` — mammalian example, `.hic` + UCSC `.chain`.
+- `example1/` — plant example using `.mcool` + `.link`
+- `example2/` — mammalian example using `.hic` + UCSC `.chain`
 
-Each is driven by `config.yaml`:
+Each uses `config.yaml`:
 
 ```bash
 cd example1
-snakemake -n -s Snakefile --cores 1   # dry-run
+snakemake -n -s Snakefile --cores 1
 snakemake -s Snakefile --cores 8
 ```
 
-Edit `config.yaml` so the matrix, synteny, and `.fai` paths point at files on
-your machine. Don't commit large matrices or generated `step1..3/` outputs —
-see `.gitignore`.
+Edit `config.yaml` to point to your local matrix, synteny, and `.fai` files. Large matrices and generated `step1..3/` outputs should not be committed; see `.gitignore`.
 
-## Interactive Outputs
+## Interactive outputs
 
-A few commands can emit Plotly HTML alongside the static plots:
+The following commands can emit Plotly HTML in addition to static plots:
 
 - `prepare --summary --interactive auto|on|off`
 - `liftcontacts --interactive auto|on|off`
 - `multiscale --interactive auto|on|off`
 
+Install the visualization extra first:
+
 ```bash
 python -m pip install -e ".[viz]"
 ```
 
-The Snakemake examples target PDF outputs and may delete Plotly HTML to keep
-workflow outputs predictable.
+The example Snakemake workflows target PDF outputs and may remove Plotly HTML to keep outputs predictable.
 
 ## File formats
 
-### `.link` (synteny, 6 columns; 0-based half-open)
+### `.link`
+
+Six columns, 0-based half-open:
 
 ```text
 chromA  startA  endA  chromB  startB  endB
 ```
 
-Columns 1-3 are always ascending on genome A. Columns 4-6 give the aligned
-interval on genome B: for a forward alignment `startB < endB`; for a reverse
-(strand `-`) alignment the B coordinates are emitted **swapped**, so
-`startB > endB` encodes the orientation. There is no separate strand column —
-the sign of `endB - startB` is the direction. (`asm2link` writes both the
-minimap2 PAF path and the mummer4 path this way; UCSC `.chain` carries strand
-explicitly and is converted by `link2mark`.)
+Columns 1–3 are ascending on genome A. For reverse alignments, genome B coordinates are written in reverse order (`startB > endB`), so orientation is encoded by the sign of `endB - startB`. There is no separate strand column.
 
-### `.mark` (densified synteny map, 8 columns)
+### `.mark`
+
+Eight columns:
 
 ```text
 chromA  startA  endA  chromB  startB  endB  direction  block_id
 ```
 
-Produced by `link2mark` from `.link`/`.chain`. Long collinear blocks are
-densified to `--step-len` spacing (default 150 bp segments, blocks shorter than
-`--thr-len` 300 bp kept whole). `direction` is `+1`/`-1` (orientation of the B
-interval); `-1` segments walk B backwards. `block_id` is the source block, with
-`<id>_gap` rows marking the spanned gap between adjacent blocks.
+`link2mark` generates `.mark` from `.link` or `.chain`. Long collinear blocks are densified at `--step-len` spacing (default 150 bp); blocks shorter than `--thr-len` (default 300 bp) are kept intact. `direction` is `+1` or `-1`. Rows with `<id>_gap` mark gaps between adjacent source blocks.
 
-### `.contacts.tsv` (prepared contacts, 14 columns)
+### `.contacts.tsv`
 
-Written by `prepare` (one row per retained contact pixel):
+Fourteen columns:
 
 ```text
 chrom1 start1 end1 bin1  chrom2 start2 end2 bin2  rank strict weak  cov1 cov2  dist_bins
 ```
 
-- `rank`/`strict`/`weak` — percentile rank of the contact's normalized signal
-  within its distance stratum, on a **0-99** integer scale (`rank` is the
-  midpoint rank, `strict`/`weak` bracket it); 99 = strongest.
-- `cov1`/`cov2` — per-bin Hi-C read coverage: the total **raw** read count
-  incident on each bin (sum of un-normalized pixel counts touching that bin);
-  higher = better sampled.
-- `dist_bins` — genomic distance in bins; `-1` marks inter-chromosomal contacts.
+- `rank`, `strict`, `weak` — normalized contact percentile ranks within each distance stratum, on a 0–99 integer scale.
+- `cov1`, `cov2` — total raw Hi-C read coverage incident on each bin.
+- `dist_bins` — genomic distance in bins; `-1` indicates inter-chromosomal contacts.
 
-The companion `.stats.tsv` holds, per distance bin, `n`, `p05/p50/p95`, and 100
-tab-separated percentile quantiles (`p001`..`p100`).
+The companion `.stats.tsv` reports `n`, `p05`, `p50`, `p95`, and percentile quantiles `p001`–`p100` for each distance bin.
 
-### `.liftContacts` (lifted contacts, 16 columns)
+### `.liftContacts`
+
+Sixteen columns:
 
 ```text
 chr1_observed pos1_observed chr2_observed pos2_observed
@@ -496,174 +466,42 @@ target_coverages_pos1 target_coverages_pos2
 target_contact_distances remapping_coverages
 ```
 
-- `observed_*` are in the source genome; `target_*`/`remap*` are the liftover
-  onto the other genome.
-- `observed_contacts`/`target_contacts` are the 0-99 percentile ranks of the
-  source and target contacts.
-- `observed_deviations`/`target_deviations` are the contact's **percentile-rank
-  uncertainty**: how far its rank sits from the strict/weak rank bounds
-  (`max(weak-rank, rank-strict)`), on the 0-99 rank scale. They are rank-width
-  values, not a genomic-coordinate or placement spread in bins.
-- `target_contact_distances` is the target-genome span in bins (`-1` =
-  inter-chromosomal).
-- `remapping_coverages` is the summed synteny weight (a 1:1 map is ~1.0; a
-  1-to-many map is diluted toward 0).
-
-## Normalization and the `balanced` model
-
-Two normalizations happen at **different stages** — do not confuse them:
-
-1. **Cooler matrix balancing** — in `prepare`. Pixel counts are balanced before
-   percentile ranking. Two weight conventions coexist and are handled
-   differently (hic2cool: *"cooler uses multiplicative weights and hic uses
-   divisive weights"*):
-   - `KR` / `VC_SQRT` / `VC` (Juicer `.hic`, hic2cool ≥ 0.5, 4DN) are **divisive**:
-     `val = count / (w1 * w2)`.
-   - `weight` (the standard `cooler balance` vector) is **multiplicative**:
-     `val = count * w1 * w2`; Coolsecture internally inverts it before the
-     division.
-
-   The weight column is picked by preference `KR > VC_SQRT > VC > weight`. Files
-   with no supported normalization vector cause `prepare` to raise an error
-   (there is no raw-count fallback).
-2. **Liftover `balanced` model** — in `liftcontacts`. When a source contact
-   maps through several synteny paths, the aggregated target quantities are
-   divided by the summed remapping weight `c[-3]` (= the
-   `remapping_coverages` column) to normalize for liftover ambiguity. `raw`
-   skips this division. **No Cooler weights are applied here** — they were
-   already consumed in `prepare`.
-
-### Invalid / NaN weights
-
-In standard Cooler balancing and Juicer KR, a non-finite or non-positive weight
-(`NaN`, `Inf`, `w <= 0`) marks a bin that failed QC and is **masked**. `prepare`
-treats such bins as unusable: any contact pixel with either end on an invalid
-bin is **dropped** (it has no trustworthy balanced value and would otherwise
-contaminate the distance-stratified percentile ranking). The weight itself is
-given a finite placeholder internally only to avoid divide-by-zero on paths that
-never see those bins. Bins that are unalignable / gap-covered can additionally be
-masked upstream. If the `.cool`/`.mcool` carries **no** weight column among
-`KR/VC_SQRT/VC/weight`, `prepare` raises a `RuntimeError` instead of silently
-using raw counts.
-
-## Metrics
-
-All scores compare the source percentile rank against the target rank for
-lifted contacts; the randomized null shuffles the target percentile rank across
-contacts (no cross-species correlation).
-
-- **P-BAD** (percentile-based Bhattacharyya-like divergence), evaluated in a
-  `±frame` bin window around each locus. For contact pair with source rank
-  `p1` and target rank `p2`:
-
-  ```text
-  dp      = |p1 - p2| / 100
-  ds(p)   = clamp(1 - |p - 50|/50, 0.01, 0.99)        # rank confidence
-  P-BAD   = mean over window pairs of [ -dp * log10(ds(p1) * ds(p2)) ]
-  ```
-
-  The window is scored only when it contains more than `frame²` contacts.
-  Higher P-BAD = stronger divergence. `metric --metric` also offers `log`,
-  `stripe`, `pearsone`, `spearman` (the last needs the `[stats]` extra).
-
-- **SCC-like** (`similarity`) — a HiCRep-inspired stratum-adjusted
-  correlation. Matrices are split into genomic-distance strata; a Pearson
-  correlation is computed per stratum and aggregated as a weighted mean with
-  stratum pixel counts as weights:
-
-  ```text
-  SCC-like = Σ_d (n_d · r_d) / Σ_d n_d
-  ```
-
-  This is a **simplified** SCC-like statistic: it does not apply HiCRep's 2-D
-  stratum smoothing or inverse-variance weights. Outputs are `.scc-like.tsv`
-  (per-stratum `r`, `n`), `.scc-like.summary.tsv`, and `.scc-like.<fmt>`.
-
-- **Multiscale stability** (`multiscale`) — P-BAD is recomputed across
-  resolutions; for per-resolution mean P-BAD `m_r`:
-
-  ```text
-  stability = 1 - std(m_r) / (|mean(m_r)| + 1e-9)
-  ```
-
-  near 1 = stable across resolutions. It also reports the fraction of contacts
-  with P-BAD above `--pbad-thr` and coarse/fine conservation flags.
-
-## Reproducing the randomized figures
-
-The observed-vs-randomized diagnostics shuffle the target percentile ranks.
-Pass an explicit RNG seed to make a run reproducible:
-
-```bash
-coolsecture contact-stat ... --seed 20260329
-```
-
-(`contact-stat` exposes `--seed`; the null uses `np.random.seed`. The `metric`
-observed-vs-random panel uses the same shuffle but currently has no `--seed`
-flag, so its null varies run to run.)
-
-## Writing `.hic` output with Juicer Tools
-
-`lift2matrix --format cool` needs no external tool. `--format hic` (or `both`)
-shells out to [Juicer Tools](https://github.com/aidenlab/juicer) (requires
-Java) to convert the reconstructed matrix to `.hic`.
-
-Coolsecture writes a temporary `<chrom>\t<size>` `chrom.sizes` and a contact
-list in Juicer's **short-with-score** format — five columns
-`chrom1 pos1 chrom2 pos2 value`, no strand/fragment fields — then runs
-`juicer_tools pre -r <resolution> <in.txt> <out.hic> <chrom.sizes>`. `pre`
-requires all records of one chromosome pair to be contiguous, so Coolsecture
-sorts the list by chromosome pair before writing; the values are 0-99
-percentile ranks.
-
-Provide the tool either as an executable named `juicer_tools` on `PATH`, or via
-`--juicer-tools` (which also accepts a full command):
-
-```bash
-# option A: wrapper script on PATH
-wget https://github.com/aidenlab/juicer/releases/download/JuicerTools-2.20.00/juicer_tools.2.20.00.jar
-printf '#!/bin/sh\nexec java -jar /path/to/juicer_tools.2.20.00.jar "$@"\n' > juicer_tools
-chmod +x juicer_tools && export PATH="$PWD:$PATH"
-
-coolsecture lift2matrix --liftover x.Merged.liftContacts --fadix a.fa.fai \
-    --format hic --out-prefix step3/x
-
-# option B: pass the jar command directly
-coolsecture lift2matrix --liftover x.Merged.liftContacts --fadix a.fa.fai \
-    --format hic --out-prefix step3/x \
-    --juicer-tools "java -jar /path/to/juicer_tools.2.20.00.jar"
-```
-
-If Juicer Tools is missing or fails, `lift2matrix` exits non-zero with an
-explanatory error instead of silently reporting success. (Verified end-to-end
-with Juicer Tools 2.20.00.)
+- `observed_*` — source-genome coordinates and values.
+- `target_*` / `remap*` — corresponding values after liftover.
+- `observed_contacts`, `target_contacts` — 0–99 percentile ranks.
+- `observed_deviations`, `target_deviations` — percentile-rank uncertainty, calculated as `max(weak-rank, rank-strict)`.
+- `target_contact_distances` — target-genome span in bins; `-1` indicates inter-chromosomal contacts.
+- `remapping_coverages` — summed synteny weight; a one-to-one mapping is approximately 1.0.
 
 ## Releases, CI, and tests
 
-- Software version: see `pyproject.toml` (currently **0.3.5**); released tags
-  are published on the GitHub repository.
-- CI (`.github/workflows/ci.yml`) runs on every push/PR: installs the package
-  on Python 3.10, runs `python -m compileall src`, and checks
-  `python -m coolsecture -h`.
-- There is no formal test suite checked in yet; the Snakemake examples
-  (`example1/`, `example2/`) double as end-to-end integration runs.
+- Current software version: **0.3.5** (see `pyproject.toml`).
+- CI (`.github/workflows/ci.yml`) runs on each push/PR, installs the package on Python 3.10, runs `python -m compileall src`, and checks `python -m coolsecture -h`.
+- No formal test suite is included yet. The Snakemake examples (`example1/`, `example2/`) serve as end-to-end integration runs.
+
+## Changelog
+
+### v0.3.5 — 2026-07-06
+
+- Added mummer4 support to `asm2link` (`-a mummer4`; `nucmer` + `delta-filter` + `show-coords`). minimap2 remains the default.
+- Added `--mummer-filter {1-to-1,mutual-best,none}` (default `1-to-1`), `--mummer-min-idy`, and `--mummer-min-len`.
+- Added `run-all --asm-aligner` and `--asm-mummer-filter`.
+- Fixed several CLI help strings, including `prepare`, `liftcontacts --contact-a`, `--dups-filter`, `--model`, and duplicated `(default: auto)` text.
+
+### v0.3.2 — 2026-06-14
+
+- Switched static plots to editable PDF/SVG text with Carlito-preferred fonts.
+- Added multi-resolution `.hic` support to `prepare` and `run-all`.
+- Added chromosome-name mapping output when aliases are used during liftover matrix generation.
+- Added automatic parameter selection with `run-all --auto` and `auto_params.tsv`.
+- Added automatic `plot-cross` region selection for top differential/conserved 2 Mb PBAD-ranked regions.
 
 ## Citation
 
-If you use Coolsecture in your research, please cite the paper and the software
-release. Fill in the bibliographic details from the published version:
+If you use Coolsecture in your research, please cite the paper.
 
 ```text
-# Peer-reviewed paper (TODO: confirm authors / title / journal / year / DOI)
-<Authors>. Coolsecture: <full paper title>. <Journal> (<Year>). doi: <DOI>
+# Peer-reviewed paper 
+Zhu P. et al.Coolsecture: an easy to use and improved framework for cross species Hi C contact map comparison. Bioinformatics (Accepted). doi: <DOI>
 
-# Software release (version + archive DOI)
-Coolsecture v0.3.5, <Authors>. Zenodo/Figshare archive, doi: <archive DOI>
-```
-
-The repository itself may also be cited as:
-
-```text
-Coolsecture: an easy-to-use framework for cross-species Hi-C contact map comparison.
-https://github.com/pk-zhu/Coolsecture
 ```
