@@ -59,7 +59,7 @@ coolsecture <command> -h
 | `metric` | Compute PBAD and related metrics as bedGraph plus figures. |
 | `lift2matrix` | Convert lifted contacts to observed/target `.cool` or `.hic` matrices. |
 | `plot-cross` | Draw split-triangle cross-species heatmaps. |
-| `multiscale` | Summarize PBAD stability across resolutions. |
+| `multiscale` | Summarize divergence stability across resolutions (`--metric pbad`/`log`/`stripe`/`pearsone`/`spearman`). |
 | `similarity` | Compute a HiCRep-inspired SCC-like similarity score. |
 | `run-all` | Run the main end-to-end workflow. |
 
@@ -367,9 +367,9 @@ Outputs:
 - `*.scc-like.summary.tsv`
 - `*.scc-like.pdf`
 
-The score is a Pearson correlation computed within genomic-distance strata and averaged using stratum pixel counts as weights. Because it does not include HiCRep's 2-D smoothing step, it is reported as **SCC-like** rather than SCC.
+The score is a Pearson correlation computed within genomic-distance strata and averaged using stratum pixel counts as weights. By default (`--smooth-h 0`) there is no 2-D smoothing, so the result is reported as **SCC-like** rather than SCC. Pass `--smooth-h h` to enable HiCRep-style 2-D stratum smoothing over a `(2h+1)×(2h+1)` bin window before the per-stratum correlations; the window mean uses only pixels observed in each matrix, so unmapped positions are not zero-filled. The score depends on h, which is recorded in the summary. `--smooth-h auto` scans h (up to `--auto-h-max`, default 10) and selects the smallest h at which SCC reaches a plateau (`|SCC(h)−SCC(h−1)| < --auto-h-tol`, default 0.01); the full SCC(h) curve is written to `*.scc-h.tsv` and the chosen h to the summary.
 
-`multiscale` separately summarizes PBAD stability across resolutions.
+`multiscale` separately summarizes divergence stability across resolutions; `--metric` accepts `pbad` (default), `log`, `stripe`, `pearsone`, or `spearman`. Correlation metrics are converted to `1 - r` and log-ratio metrics to `|log ratio|`, so high values always mean divergence.
 
 ### 9. Plot a cross-species locus
 
@@ -481,6 +481,11 @@ target_contact_distances remapping_coverages
 
 ## Changelog
 
+### v0.4.1 — 2026-09-10
+
+- `similarity`: added optional HiCRep-style 2-D stratum smoothing. `--smooth-h h` smooths over a `(2h+1)×(2h+1)` bin window before the per-stratum correlations (default `0` keeps the unsmoothed SCC-like value); `--smooth-h auto` scans `h` and selects the SCC plateau onset, writing the SCC(h) curve to `*.scc-h.tsv`.
+- `multiscale`: added `--metric {pbad,log,stripe,pearsone,spearman}` (default `pbad`) and `--metric-thr`; all metrics are mapped to a common divergence score (`1-r` for correlations, `|log ratio|` for log metrics). Outputs are named per metric (`*.multiscale.<metric>.tsv`/`.summary.tsv`).
+
 ### v0.3.5 — 2026-07-06
 
 - Added mummer4 support to `asm2link` (`-a mummer4`; `nucmer` + `delta-filter` + `show-coords`). minimap2 remains the default.
@@ -502,6 +507,6 @@ If you use Coolsecture in your research, please cite the paper.
 
 ```text
 # Peer-reviewed paper 
-Zhu P. et al. Coolsecture: an easy to use and improved framework for cross species Hi C contact map comparison. Bioinformatics (Accepted). doi: <DOI>
+Zhu P. et al.Coolsecture: an easy to use and improved framework for cross species Hi C contact map comparison. Bioinformatics (Accepted). doi: <DOI>
 
 ```
