@@ -6,10 +6,10 @@ import matplotlib
 
 _FONT_WARNED = False
 
-def configure_matplotlib_for_publication(font_family: str = "Calibri"):
+def configure_matplotlib_for_publication(font_family: str = "Arial"):
     global _FONT_WARNED
     matplotlib.use('Agg', force=True)
-    fallback_fonts = [font_family, "Carlito", "Arial", "DejaVu Sans"]
+    fallback_fonts = [font_family, "Helvetica", "Liberation Sans", "DejaVu Sans"]
     matplotlib.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": fallback_fonts,
@@ -18,6 +18,10 @@ def configure_matplotlib_for_publication(font_family: str = "Calibri"):
         "svg.fonttype": "none",
         "text.usetex": False,
         "axes.unicode_minus": False,
+        # Match the 1.0 pt tick width and sit away from the 300-dpi rounding
+        # boundary (0.8 pt = 3.33 px rasterizes 3 px on some axes and 4 px on
+        # others depending on sub-pixel origin, making borders look uneven).
+        "axes.linewidth": 1.0,
     })
     if not _FONT_WARNED:
         try:
@@ -470,7 +474,7 @@ def _write_plotly_html(fig, path: str, title: Optional[str]=None):
     fig.update_layout(
         template="plotly_white",
         autosize=True,
-        font=dict(family="Carlito, Arial, sans-serif"),
+        font=dict(family="Arial, Helvetica, sans-serif"),
         margin=dict(l=60, r=20, t=60, b=55),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )

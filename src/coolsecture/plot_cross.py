@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import argparse, numpy as np, os
 from .post_common import (
     configure_matplotlib_for_publication,
@@ -42,7 +42,7 @@ def norm_and_cmap(mode: str, M: np.ndarray):
         lim = max(float(lim), 1e-6)
         norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
         cmap = make_pinkblue_cmap()
-        label = "obs - tgt" if mode == "diff" else "log2(obs/tgt)"
+        label = "obs - tgt" if mode == "diff" else r"$\log_2$(obs/tgt)"
     return norm, cmap, label
 
 def resolve_cmap(name: str, default: str):

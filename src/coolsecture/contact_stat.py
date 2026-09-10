@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import argparse, os
 import numpy as np
 from .post_common import (
@@ -376,7 +376,7 @@ def main():
         pad = 0.12
         cax = fig.add_axes([bbox.x1 + pad, bbox.y0, w, bbox.height])
         cbar = plt.colorbar(im, cax=cax)
-        cbar.set_label("Log2(observed/random)", rotation=270, labelpad=14)
+        cbar.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14)
         cax.yaxis.set_ticks_position('right')
         cax.yaxis.set_label_position('right')
         ax.set_xlabel(f"{args.label_b} percentile score")
@@ -422,7 +422,7 @@ def main():
         pad2 = 0.12
         cax2 = fig2.add_axes([bbox2.x1 + pad2, bbox2.y0, w2, bbox2.height])
         cbar2 = plt.colorbar(im2, cax=cax2)
-        cbar2.set_label("Log2(observed/random)", rotation=270, labelpad=14)
+        cbar2.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14)
         cax2.yaxis.set_ticks_position('right')
         cax2.yaxis.set_label_position('right')
         ax2.set_xlabel(f"{args.label_b} genomic distance, Mb")
@@ -519,14 +519,14 @@ def main():
         pad3 = 0.12
         cax3 = fig3.add_axes([bbox3.x1 + pad3, bbox3.y0, w3, bbox3.height])
         cbar3 = plt.colorbar(im3, cax=cax3)
-        cbar3.set_label("Log2(observed/random)", rotation=270, labelpad=14)
+        cbar3.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14)
         cax3.yaxis.set_ticks_position('right')
         cax3.yaxis.set_label_position('right')
-        ax3.set_xlabel(f"log2({args.label_a} contact distance / {args.label_b} contact distance)")
+        ax3.set_xlabel(rf"$\log_2$({args.label_a} contact distance / {args.label_b} contact distance)")
         if score_mode:
-            ax3.set_ylabel(f"log2({args.label_a} contact frequency / {args.label_b} contact frequency)")
+            ax3.set_ylabel(rf"$\log_2$({args.label_a} contact frequency / {args.label_b} contact frequency)")
         else:
-            ax3.set_ylabel(f"log2({args.label_a} percentile score / {args.label_b} percentile score)")
+            ax3.set_ylabel(rf"$\log_2$({args.label_a} percentile score / {args.label_b} percentile score)")
         ax3.set_xlim(-rng, rng)
         ax3.set_ylim(-rng, rng)
         _save_fig(fig3, f"{out_prefix}.ratio_scatter.{args.format}", fmt=args.format, dpi=args.dpi)
