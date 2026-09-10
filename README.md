@@ -507,6 +507,6 @@ If you use Coolsecture in your research, please cite the paper.
 
 ```text
 # Peer-reviewed paper 
-Zhu P. et al.Coolsecture: an easy to use and improved framework for cross species Hi C contact map comparison. Bioinformatics (Accepted). doi: <DOI>
+Zhu P. et al. Coolsecture: an easy to use and improved framework for cross species Hi C contact map comparison. Bioinformatics (Accepted). doi: <DOI>
 
 ```
