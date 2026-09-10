@@ -73,7 +73,16 @@ def split_cli_args(params: str):
 def coolsecture_env():
     env = os.environ.copy()
     src = str(SRC_DIR)
-    env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    # NOTE: previously injected /opt/anaconda3/lib/python3.12/site-packages here
+    # so hic2cool could be found during prepare_sample. That path pulls in a
+    # conda-compiled matplotlib whose C extensions were built against NumPy 1.x
+    # and now crash under the system's NumPy 2.x. If you need to run
+    # prepare_sample from .hic, install hic2cool into the same Python that
+    # runs snakemake (e.g. `pip install --user hic2cool`) instead.
+    pythonpath = src
+    if env.get("PYTHONPATH"):
+        pythonpath += os.pathsep + env["PYTHONPATH"]
+    env["PYTHONPATH"] = pythonpath
     return env
 
 def ensure_dir(path: str):
@@ -204,13 +213,14 @@ def cool_files(a,b,res=None):
         f"step3/{a}_{b}{suffix}.Target.cool"
     ]
 
-def scc_files(a,b,res=None):
-    # Return similarity (SCC-like) files for the workflow
+def cv_files(a,b,res=None):
+    # Return similarity files for the workflow
     suffix = f".r{res}" if res is not None else ""
+    cv_prefix = f"step3/{a}_vs_{b}_on_hg38{suffix}"
     return [
-        f"step3/{a}_vs_{b}{suffix}.scc-like.tsv",
-        f"step3/{a}_vs_{b}{suffix}.scc-like.summary.tsv",
-        f"step3/{a}_vs_{b}{suffix}.scc-like.pdf",
+        f"{cv_prefix}.scc-like.tsv",
+        f"{cv_prefix}.scc-like.summary.tsv",
+        f"{cv_prefix}.scc-like.pdf"
     ]
 
 # -----------------------
@@ -245,13 +255,13 @@ def outputs_all():
                 outs += cstat_files(a,b, r)
                 outs += metric_files(a,b, r)
                 outs += cool_files(a,b, r)
-                outs += scc_files(a,b, r)
+                outs += cv_files(a,b, r)
         else:
             outs.append(lift_path(a,b))
             outs += cstat_files(a,b)
             outs += metric_files(a,b)
             outs += cool_files(a,b)
-            outs += scc_files(a,b)
+            outs += cv_files(a,b)
     return outs
 
 rule all:
@@ -487,7 +497,7 @@ if RES_LIST:
             fai=lambda wc: SPEC[wc.a]["fai"]
         output:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
-            tgt="step3/{a}_{b}.r{res}.Target.cool"
+            ctl="step3/{a}_{b}.r{res}.Target.cool"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
@@ -506,18 +516,18 @@ if RES_LIST:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
             tgt="step3/{a}_{b}.r{res}.Target.cool"
         output:
-            scc_tsv="step3/{a}_vs_{b}.r{res}.scc-like.tsv",
-            scc_summary="step3/{a}_vs_{b}.r{res}.scc-like.summary.tsv",
-            scc_plot="step3/{a}_vs_{b}.r{res}.scc-like.pdf"
+            scc_tsv="step3/{a}_vs_{b}_on_hg38.r{res}.scc-like.tsv",
+            scc_summary="step3/{a}_vs_{b}_on_hg38.r{res}.scc-like.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}_on_hg38.r{res}.scc-like.pdf"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "similarity",
-                "--matrix-a", input.obs,
-                "--matrix-b", input.tgt,
+                "--matrix-a", input.tgt,
+                "--matrix-b", input.obs,
                 "--format", "pdf",
-                "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}.r{wildcards.res}",
+                "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}_on_hg38.r{wildcards.res}",
             ])
 else:
     # -----------------------
@@ -618,7 +628,7 @@ else:
             fai=lambda wc: SPEC[wc.a]["fai"]
         output:
             obs="step3/{a}_{b}.Observed.cool",
-            tgt="step3/{a}_{b}.Target.cool"
+            ctl="step3/{a}_{b}.Target.cool"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
@@ -637,16 +647,16 @@ else:
             obs="step3/{a}_{b}.Observed.cool",
             tgt="step3/{a}_{b}.Target.cool"
         output:
-            scc_tsv="step3/{a}_vs_{b}.scc-like.tsv",
-            scc_summary="step3/{a}_vs_{b}.scc-like.summary.tsv",
-            scc_plot="step3/{a}_vs_{b}.scc-like.pdf"
+            scc_tsv="step3/{a}_vs_{b}_on_hg38.scc-like.tsv",
+            scc_summary="step3/{a}_vs_{b}_on_hg38.scc-like.summary.tsv",
+            scc_plot="step3/{a}_vs_{b}_on_hg38.scc-like.pdf"
         threads: DEFAULT_THREADS
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "similarity",
-                "--matrix-a", input.obs,
-                "--matrix-b", input.tgt,
+                "--matrix-a", input.tgt,
+                "--matrix-b", input.obs,
                 "--format", "pdf",
-                "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}",
+                "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}_on_hg38",
             ])
