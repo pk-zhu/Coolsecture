@@ -18,3 +18,6 @@ parameters:
   liftcontacts_parameters: "--agg-frame 400000 --dups-filter coverage --model balanced --tmp-dir .snakemake/tmp/liftcontracts --spill-threshold-mb 1 --hash-shards 64 --pbad-mode auto --pbad-auto-threshold-mb 1024"
   contact_stat_parameters: "--bins 400 --cmap RdBu_r --max-dist-mb 5000 --ratio-scatter-standard c-intersecture --seed 20260329"
   metric_parameters: "--frames 8 --metric pbad"
+  lift2matrix_parameters: ""
+  similarity_parameters: ""     # e.g. "--max-dist-mb 10 --smooth-h auto"
+  multiscale_parameters: ""     # e.g. "--metric pbad --metric-thr 0.5"

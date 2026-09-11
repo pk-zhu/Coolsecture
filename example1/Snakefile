@@ -24,6 +24,9 @@ PREPARE_P    = P.get("prepare_parameters", "")
 LIFTCONTACTS_P = P.get("liftcontacts_parameters", P.get("liftcontracts_parameters", ""))
 CSTAT_P      = P.get("contact_stat_parameters", "")
 METRIC_P     = P.get("metric_parameters", "")
+LIFT2MATRIX_P = P.get("lift2matrix_parameters", "")
+SIMILARITY_P  = P.get("similarity_parameters", "")
+MULTISCALE_P  = P.get("multiscale_parameters", "")
 HAS_MCOOL = any(str(SPEC[s].get("cool", "")).lower().endswith(".mcool") and "::" not in str(SPEC[s].get("cool", "")) for s in SPECIES)
 HAS_HIC = any(str(SPEC[s].get("cool", "")).lower().endswith(".hic") or str(SPEC[s].get("hic", "")).lower().endswith(".hic") for s in SPECIES)
 DEFAULT_THREADS = config.get("default_threads", 10)
@@ -213,6 +216,13 @@ def scc_files(a,b,res=None):
         f"step3/{a}_vs_{b}{suffix}.scc-like.pdf",
     ]
 
+def multiscale_files(a,b):
+    # Multiscale runs once per pair across all resolutions.
+    return [
+        f"step3/{a}_{b}.multiscale.{_METRIC_KIND}.tsv",
+        f"step3/{a}_{b}.multiscale.{_METRIC_KIND}.summary.tsv",
+    ]
+
 # -----------------------
 # Rule: all
 # -----------------------
@@ -246,6 +256,8 @@ def outputs_all():
                 outs += metric_files(a,b, r)
                 outs += cool_files(a,b, r)
                 outs += scc_files(a,b, r)
+                if len(RES_LIST) > 1:
+                    outs += multiscale_files(a,b)
         else:
             outs.append(lift_path(a,b))
             outs += cstat_files(a,b)
@@ -489,12 +501,15 @@ if RES_LIST:
             obs="step3/{a}_{b}.r{res}.Observed.cool",
             tgt="step3/{a}_{b}.r{res}.Target.cool"
         threads: DEFAULT_THREADS
+        params:
+            extra=LIFT2MATRIX_P
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "lift2matrix",
                 "--liftover", input.liftover,
                 "--fadix", input.fai,
+                *split_cli_args(params.extra),
                 "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}.r{wildcards.res}",
             ])
 
@@ -510,15 +525,45 @@ if RES_LIST:
             scc_summary="step3/{a}_vs_{b}.r{res}.scc-like.summary.tsv",
             scc_plot="step3/{a}_vs_{b}.r{res}.scc-like.pdf"
         threads: DEFAULT_THREADS
+        params:
+            extra=SIMILARITY_P
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "similarity",
                 "--matrix-a", input.obs,
                 "--matrix-b", input.tgt,
+                *split_cli_args(params.extra),
                 "--format", "pdf",
                 "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}.r{wildcards.res}",
             ])
+
+    # -----------------------
+    # step3: multiscale divergence stability (per pair, across resolutions)
+    # -----------------------
+    rule multiscale:
+        input:
+            lifts=lambda wc: [downstream_lift_path(wc.a, wc.b, r) for r in RES_LIST],
+            fai=lambda wc: SPEC[wc.a]["fai"]
+        output:
+            tsv=f"step3/{{a}}_{{b}}.multiscale.{_METRIC_KIND}.tsv",
+            summary=f"step3/{{a}}_{{b}}.multiscale.{_METRIC_KIND}.summary.tsv"
+        threads: 1
+        params:
+            extra=MULTISCALE_P
+        run:
+            ensure_dir("step3")
+            run_coolsecture([
+                "multiscale",
+                "--liftover-prefix", f"step2/{wildcards.a}_{wildcards.b}/{wildcards.a}_{wildcards.b}",
+                "--fadix", input.fai,
+                "--metric", _METRIC_KIND,
+                "--frame", str(_METRIC_FRAMES[0]),
+                *split_cli_args(params.extra),
+                "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
+            ])
+            remove_if_exists(f"step3/{wildcards.a}_{wildcards.b}.multiscale.{_METRIC_KIND}.plotly.html")
+            remove_if_exists(f"step3/{wildcards.a}_{wildcards.b}.multiscale.{_METRIC_KIND}.summary.plotly.html")
 else:
     # -----------------------
     # step2: liftcontacts (per pair)
@@ -620,12 +665,15 @@ else:
             obs="step3/{a}_{b}.Observed.cool",
             tgt="step3/{a}_{b}.Target.cool"
         threads: DEFAULT_THREADS
+        params:
+            extra=LIFT2MATRIX_P
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "lift2matrix",
                 "--liftover", input.liftover,
                 "--fadix", input.fai,
+                *split_cli_args(params.extra),
                 "--out-prefix", f"step3/{wildcards.a}_{wildcards.b}",
             ])
 
@@ -641,12 +689,15 @@ else:
             scc_summary="step3/{a}_vs_{b}.scc-like.summary.tsv",
             scc_plot="step3/{a}_vs_{b}.scc-like.pdf"
         threads: DEFAULT_THREADS
+        params:
+            extra=SIMILARITY_P
         run:
             ensure_dir("step3")
             run_coolsecture([
                 "similarity",
                 "--matrix-a", input.obs,
                 "--matrix-b", input.tgt,
+                *split_cli_args(params.extra),
                 "--format", "pdf",
                 "--out-prefix", f"step3/{wildcards.a}_vs_{wildcards.b}",
             ])
