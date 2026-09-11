@@ -73,8 +73,10 @@ def main():
 
                 metric_labels = {"pbad": "P-BAD", "log": "log", "stripe": "stripe",
                                  "pearsone": "Pearson r", "spearman": "Spearman rho"}
-                ax.set_xlabel(f"{metric_labels.get(args.metric, args.metric)} score (frame={frame})")
-                ax.set_ylabel("density")
+                # Axis titles one step larger than the tick labels (default 10 pt).
+                label_fs = plt.rcParams["font.size"] + 2
+                ax.set_xlabel(f"{metric_labels.get(args.metric, args.metric)} score (frame={frame})", fontsize=label_fs)
+                ax.set_ylabel("density", fontsize=label_fs)
                 ax.legend(frameon=False)
 
             out_fig = f"{out_prefix}.{args.metric}.{frame}frame.stat.{args.format}"

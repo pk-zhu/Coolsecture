@@ -12,7 +12,8 @@ from .post_common import (
 from .metric import metricCalc
 
 def _resolve_liftover_prefix(prefix: str):
-    paths = sorted(glob.glob(f"{prefix}.r*.liftContacts"))
+    paths = [p for p in sorted(glob.glob(f"{prefix}.r*.liftContacts"))
+             if ".AtoB." not in os.path.basename(p) and ".BtoA." not in os.path.basename(p)]
     if not paths:
         single = f"{prefix}.liftContacts"
         if os.path.exists(single):
@@ -20,7 +21,7 @@ def _resolve_liftover_prefix(prefix: str):
         raise SystemExit(f"No liftover files found for prefix: {prefix}")
     out = []
     for p in paths:
-        m = re.search(r"\.r(\d+)\.liftContacts$", p)
+        m = re.search(r"\.r(\d+)\.liftContacts$", p) or re.search(r"\.r(\d+)\.Merged\.liftContacts$", p)
         r = int(m.group(1)) if m else None
         out.append((p, r))
     return out
@@ -37,6 +38,21 @@ def _to_divergence(raw: float, metric: str) -> float:
     if metric in ("log", "stripe"):
         return abs(raw)
     return raw
+
+def _divergences_from_bedgraph(bg_path: str, metric: str) -> np.ndarray:
+    vals = []
+    with open(bg_path) as f:
+        for line in f:
+            a = line.split()
+            if len(a) < 4:
+                continue
+            try:
+                v = float(a[3])
+            except ValueError:
+                continue
+            if np.isfinite(v):
+                vals.append(_to_divergence(v, metric))
+    return np.array(vals, dtype=float)
 
 
 # Default "divergent contact" threshold on the common divergence scale, per metric.
@@ -78,11 +94,29 @@ def main():
     rows = []
     for path, res_hint in _resolve_liftover_prefix(args.liftover_prefix):
         res = res_hint or infer_resolution_from_liftover(path)
-        Order = ChromIndexingFAI(args.fadix)
-        contacts = read_contacts(path, Order, res, short=False)
-        vals = metricCalc(contacts, res, frame=args.frame, metric=args.metric)
-        arr = np.array([_to_divergence(v[3], args.metric)
-                        for v in vals if len(v) == 4 and np.isfinite(v[3])], dtype=float)
+        # Reuse the per-window values the metric step already wrote when a
+        # matching bedGraph exists; this skips the expensive
+        # read_contacts+metricCalc recomputation and keeps the aggregation
+        # consistent with the metric step (including its --max-dist-mb cap).
+        # Candidate 1: bedGraph next to the .liftContacts (same stem).
+        # Candidate 2: bedGraph under the --out-prefix directory, the naming
+        #   used by run-all (prefix.Merged.r{res}...) and the example
+        #   Snakefiles ({prefix}.r{res}...).
+        stem = path[:-len(".liftContacts")]
+        candidates = [
+            stem + f".{args.metric}.{args.frame}frame.bedGraph",
+            f"{args.out_prefix}.r{res}.{args.metric}.{args.frame}frame.bedGraph",
+        ]
+        bg = next((c for c in candidates if os.path.exists(c)), None)
+        if bg is not None:
+            arr = _divergences_from_bedgraph(bg, args.metric)
+            print(f"[INFO] resolution {res}: reusing metric bedGraph {bg}")
+        else:
+            Order = ChromIndexingFAI(args.fadix)
+            contacts = read_contacts(path, Order, res, short=False)
+            vals = metricCalc(contacts, res, frame=args.frame, metric=args.metric)
+            arr = np.array([_to_divergence(v[3], args.metric)
+                            for v in vals if len(v) == 4 and np.isfinite(v[3])], dtype=float)
         if arr.size == 0:
             mean = median = frac_high = 0.0
         else:

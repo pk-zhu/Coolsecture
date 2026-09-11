@@ -394,12 +394,14 @@ def main():
                 from .post_common import _save_fig, _import_plotly, _resolve_interactive, _write_plotly_html
                 import matplotlib.pyplot as plt
                 fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(6.2, 7.2), sharex=True)
+                # Axis titles one step larger than the tick labels (default 10 pt).
+                label_fs = plt.rcParams["font.size"] + 2
                 ax = axes[0]
                 ax.plot(df["resolution"], df["elapsed_s"], marker="o", label="runtime (s)")
-                ax.set_ylabel("runtime (s)")
+                ax.set_ylabel("runtime (s)", fontsize=label_fs)
                 ax2 = ax.twinx()
                 ax2.plot(df["resolution"], df["nnz"], marker="s", color="#d04a02", label="nnz")
-                ax2.set_ylabel("nnz")
+                ax2.set_ylabel("nnz", fontsize=label_fs)
                 ax.grid(True, alpha=0.3)
                 lines = ax.get_lines() + ax2.get_lines()
                 labels = [l.get_label() for l in lines]
@@ -407,11 +409,11 @@ def main():
 
                 axb = axes[1]
                 axb.plot(df["resolution"], df["coverage_bin_frac"], marker="o", label="covered bin fraction")
-                axb.set_xlabel("resolution (bp)")
-                axb.set_ylabel("covered bin fraction")
+                axb.set_xlabel("resolution (bp)", fontsize=label_fs)
+                axb.set_ylabel("covered bin fraction", fontsize=label_fs)
                 axb2 = axb.twinx()
                 axb2.plot(df["resolution"], df["coverage_per_mb"], marker="s", color="#2a7f62", label="coverage per Mb")
-                axb2.set_ylabel("coverage per Mb")
+                axb2.set_ylabel("coverage per Mb", fontsize=label_fs)
                 axb.grid(True, alpha=0.3)
                 lines = axb.get_lines() + axb2.get_lines()
                 labels = [l.get_label() for l in lines]

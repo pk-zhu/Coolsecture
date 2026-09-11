@@ -50,6 +50,9 @@ def main():
     if args.seed is not None:
         np.random.seed(int(args.seed))
 
+    # Axis titles one step larger than the tick labels (default 10 pt).
+    label_fs = plt.rcParams["font.size"] + 2
+
     def _adaptive_bins(base_bins: int, n_points: int, lower: int = 40, upper: int = None) -> int:
         base = max(int(base_bins), 1)
         n = max(int(n_points), 1)
@@ -376,11 +379,11 @@ def main():
         pad = 0.12
         cax = fig.add_axes([bbox.x1 + pad, bbox.y0, w, bbox.height])
         cbar = plt.colorbar(im, cax=cax)
-        cbar.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14)
+        cbar.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14, fontsize=label_fs)
         cax.yaxis.set_ticks_position('right')
         cax.yaxis.set_label_position('right')
-        ax.set_xlabel(f"{args.label_b} percentile score")
-        ax.set_ylabel(f"{args.label_a} percentile score")
+        ax.set_xlabel(f"{args.label_b} percentile score", fontsize=label_fs)
+        ax.set_ylabel(f"{args.label_a} percentile score", fontsize=label_fs)
         ax.set_xlim(0,100); ax.set_ylim(0,100)
         ax.set_xticks(range(0,101,10)); ax.set_yticks(range(0,101,10))
         _save_fig(fig, f"{out_prefix}.percentile_heatmap.{args.format}", fmt=args.format, dpi=args.dpi)
@@ -422,11 +425,11 @@ def main():
         pad2 = 0.12
         cax2 = fig2.add_axes([bbox2.x1 + pad2, bbox2.y0, w2, bbox2.height])
         cbar2 = plt.colorbar(im2, cax=cax2)
-        cbar2.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14)
+        cbar2.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14, fontsize=label_fs)
         cax2.yaxis.set_ticks_position('right')
         cax2.yaxis.set_label_position('right')
-        ax2.set_xlabel(f"{args.label_b} genomic distance, Mb")
-        ax2.set_ylabel(f"{args.label_a} genomic distance, Mb")
+        ax2.set_xlabel(f"{args.label_b} genomic distance, Mb", fontsize=label_fs)
+        ax2.set_ylabel(f"{args.label_a} genomic distance, Mb", fontsize=label_fs)
         ax2.set_xlim(0, unified_cap); ax2.set_ylim(0, unified_cap)
         _save_fig(fig2, f"{out_prefix}.distance_heatmap.{args.format}", fmt=args.format, dpi=args.dpi)
         plt.close(fig2)
@@ -519,14 +522,14 @@ def main():
         pad3 = 0.12
         cax3 = fig3.add_axes([bbox3.x1 + pad3, bbox3.y0, w3, bbox3.height])
         cbar3 = plt.colorbar(im3, cax=cax3)
-        cbar3.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14)
+        cbar3.set_label(r"$\log_2$(observed/random)", rotation=270, labelpad=14, fontsize=label_fs)
         cax3.yaxis.set_ticks_position('right')
         cax3.yaxis.set_label_position('right')
-        ax3.set_xlabel(rf"$\log_2$({args.label_a} contact distance / {args.label_b} contact distance)")
+        ax3.set_xlabel(rf"$\log_2$({args.label_a} contact distance / {args.label_b} contact distance)", fontsize=label_fs)
         if score_mode:
-            ax3.set_ylabel(rf"$\log_2$({args.label_a} contact frequency / {args.label_b} contact frequency)")
+            ax3.set_ylabel(rf"$\log_2$({args.label_a} contact frequency / {args.label_b} contact frequency)", fontsize=label_fs)
         else:
-            ax3.set_ylabel(rf"$\log_2$({args.label_a} percentile score / {args.label_b} percentile score)")
+            ax3.set_ylabel(rf"$\log_2$({args.label_a} percentile score / {args.label_b} percentile score)", fontsize=label_fs)
         ax3.set_xlim(-rng, rng)
         ax3.set_ylim(-rng, rng)
         _save_fig(fig3, f"{out_prefix}.ratio_scatter.{args.format}", fmt=args.format, dpi=args.dpi)

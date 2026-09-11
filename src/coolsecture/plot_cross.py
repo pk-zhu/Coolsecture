@@ -370,7 +370,10 @@ def main():
         if is_diag:
             ax.plot([extent[0], extent[1]], [extent[2], extent[3]], color='k', lw=0.8, alpha=0.6)
 
-        ax.set_xlabel(f"{cx} (Mb)"); ax.set_ylabel(f"{cy} (Mb)")
+        # Axis titles one step larger than the tick labels (default 10 pt).
+        label_fs = plt.rcParams["font.size"] + 2
+        ax.set_xlabel(f"{cx} (Mb)", fontsize=label_fs)
+        ax.set_ylabel(f"{cy} (Mb)", fontsize=label_fs)
 
         fig.canvas.draw()
 
@@ -412,12 +415,12 @@ def main():
         cax_right_lower = fig.add_axes([x_right_inner, bbox.y0, w, bbox.height])
 
         cbarU = plt.colorbar(im_u, cax=cax_right_upper)
-        cbarU.set_label(f"{h_upper}: {lab_u}", rotation=270, labelpad=12)
+        cbarU.set_label(f"{h_upper}: {lab_u}", rotation=270, labelpad=12, fontsize=label_fs)
         cax_right_upper.yaxis.set_ticks_position('right')
         cax_right_upper.yaxis.set_label_position('right')
 
         cbarL = plt.colorbar(im_l, cax=cax_right_lower)
-        cbarL.set_label(f"{h_lower}: {lab_l}", rotation=270, labelpad=12)
+        cbarL.set_label(f"{h_lower}: {lab_l}", rotation=270, labelpad=12, fontsize=label_fs)
         cax_right_lower.yaxis.set_ticks_position('right')
         cax_right_lower.yaxis.set_label_position('right')
 

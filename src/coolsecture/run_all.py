@@ -83,6 +83,11 @@ def _has_multires_outputs(prefix: Path) -> bool:
     pattern = f"{prefix.name}.r*.contacts.tsv"
     return any(parent.glob(pattern))
 
+def _has_flag(args_str: str, *flags: str) -> bool:
+    toks = shlex.split(args_str) if args_str else []
+    # "--model=raw" and "--model raw" both count.
+    return any(t.split("=", 1)[0] in flags for t in toks)
+
 def _sanitize_extra_args(args_str: str, remove_flags):
     if not args_str:
         return []
@@ -138,6 +143,7 @@ def main():
     p.add_argument("--metric-args", default="", help="Extra args for metric")
     p.add_argument("--lift2matrix-args", default="", help="Extra args for lift2matrix")
     p.add_argument("--similarity-args", default="", help="Extra args for similarity")
+    p.add_argument("--multiscale-args", default="", help="Extra args for multiscale")
     p.add_argument("--plot-cross-args", default="", help="Extra args for plot-cross")
     args = p.parse_args()
     # Merge deprecated --liftcontracts-args alias into --liftcontacts-args.
@@ -162,12 +168,30 @@ def main():
         args.resolution, reason = pick_resolution(args.matrix_a, args.matrix_b)
         auto_rows.append(("resolution", args.resolution, reason))
     auto_max_dist = pick_max_dist_mb(fai_a, args.resolution) if args.auto else None
+    frames = None
     if args.auto and "--frames" not in args.metric_args:
         frames = pick_metric_frames(args.resolution)
         args.metric_args = (args.metric_args + " --frames " + " ".join(str(x) for x in frames)).strip()
         auto_rows.append(("metric.frames", ",".join(str(x) for x in frames), "approximately 200kb PBAD window"))
     if args.auto and "--max-dist-mb" not in args.metric_args:
         args.metric_args = (args.metric_args + f" --max-dist-mb {auto_max_dist:.6g}").strip()
+    # Multiscale reuses the metric window so both steps summarize the same scale.
+    ms_extra = shlex.split(args.multiscale_args)
+    if args.auto and frames and not _has_flag(args.multiscale_args, "--frame"):
+        ms_extra = ["--frame", str(frames[0])] + ms_extra
+        auto_rows.append(("multiscale.frame", str(frames[0]), "match the metric PBAD window"))
+    # Recommended liftover defaults (docs/workflow.md step 4): balanced
+    # normalizes aggregated contacts by remapping coverage, coverage keeps the
+    # best-supported target placement. Flags given in --liftcontacts-args win.
+    lift_defaults = []
+    if not _has_flag(args.liftcontacts_args, "--model"):
+        lift_defaults += ["--model", "balanced"]
+        auto_rows.append(("liftcontacts.model", "balanced", "recommended: normalize by remapping coverage"))
+    if not _has_flag(args.liftcontacts_args, "--dups-filter"):
+        lift_defaults += ["--dups-filter", "coverage"]
+        auto_rows.append(("liftcontacts.dups_filter", "coverage", "recommended: keep the best-supported target placement"))
+    if lift_defaults:
+        args.liftcontacts_args = (args.liftcontacts_args + " " + " ".join(lift_defaults)).strip()
     if args.auto:
         auto_rows.append(("max_dist_mb", f"{auto_max_dist:.6g}", "derived from chromosome sizes"))
         write_auto_params(str(out / "auto_params.tsv"), auto_rows)
@@ -228,7 +252,7 @@ def main():
     mcool_input = args.matrix_a.lower().endswith(".mcool") or args.matrix_b.lower().endswith(".mcool")
     multi_res = (bool(res_list) and mcool_input) or _has_multires_outputs(prep_a) or _has_multires_outputs(prep_b)
     if multi_res:
-        print("[INFO] Detected multi-resolution mode. Switching liftcontracts/contact-stat/metric/lift2matrix to prefix-based processing.")
+        print("[INFO] Detected multi-resolution mode. Switching liftcontacts/contact-stat/metric/lift2matrix to prefix-based processing.")
     lift_prefix = step2 / f"{args.name_a}_{args.name_b}" / f"{args.name_a}_{args.name_b}"
     lift_prefix.parent.mkdir(parents=True, exist_ok=True)
     downstream_prefix = str(lift_prefix) + ".Merged"
@@ -332,6 +356,15 @@ def main():
         if pbad:
             cmd += ["--pbad-bedgraph", pbad]
         _run(cmd + shlex.split(args.plot_cross_args))
+
+    # 9) multiscale divergence-stability summary across resolutions
+    if multi_res or args.multiscale_args:
+        _run([sys.executable, "-m", "coolsecture", "multiscale",
+              "--liftover-prefix", downstream_prefix,
+              "--fadix", fai_a,
+              "--out-prefix", downstream_prefix] + ms_extra)
+    else:
+        print("[INFO] Skipping multiscale: single-resolution run. Use a multi-resolution .mcool input or run the multiscale command manually.")
 
 if __name__ == "__main__":
     main()

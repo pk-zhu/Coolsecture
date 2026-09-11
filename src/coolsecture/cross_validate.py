@@ -252,7 +252,7 @@ def main():
         help="HiCRep-style 2-D stratum smoothing half-window in bins: an integer "
              "(0 = no smoothing, the simplified SCC-like default), or 'auto' to "
              "scan h and pick the SCC plateau onset (see --auto-h-max/--auto-h-tol)")
-    p.add_argument("--auto-h-max", type=int, default=10,
+    p.add_argument("--auto-h-max", type=int, default=25,
         help="Maximum h scanned when --smooth-h auto")
     p.add_argument("--auto-h-tol", type=float, default=0.01,
         help="Plateau tolerance (|SCC(h)-SCC(h-1)| < tol) when --smooth-h auto")
@@ -335,8 +335,10 @@ def main():
     rs = [r for _, _, r, _ in rows if np.isfinite(r)]
     if rs:
         ax.plot(np.array(ds) * res / 1e6, rs, lw=1.2, color="#f1594f", alpha=0.85)
-    ax.set_xlabel("genomic distance (Mb)")
-    ax.set_ylabel("stratum Pearson r")
+    # Axis titles one step larger than the tick labels (default 10 pt).
+    label_fs = plt.rcParams["font.size"] + 2
+    ax.set_xlabel("genomic distance (Mb)", fontsize=label_fs)
+    ax.set_ylabel("stratum Pearson r", fontsize=label_fs)
     title = f"SCC-like = {scc:.4f}"
     if smooth_h > 0:
         title += f"  (smoothing h={smooth_h}{', auto' if auto_mode else ''})"
