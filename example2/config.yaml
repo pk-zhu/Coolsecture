@@ -22,3 +22,5 @@ parameters:
   contact_stat_parameters: "--bins 400 --cmap RdBu_r --max-dist-mb 5000"
   metric_parameters: "--frames 8 --metric pbad"
   lift2matrix_parameters: "--tmp-dir .snakemake/tmp/lift2matrix --spill-threshold-mb 256"
+  similarity_parameters: ""     # e.g. "--max-dist-mb 10 --smooth-h auto"
+  multiscale_parameters: ""     # e.g. "--metric pbad --metric-thr 0.5"
